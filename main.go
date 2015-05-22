@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/fstab/h2c/http2client"
 	"log"
 	"net"
 	"os"
@@ -12,39 +13,50 @@ import (
 
 var sock net.Listener
 
+const socketFile = "/tmp/h2c.sock"
+
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-	}
-	switch os.Args[1] {
-	case "start":
-		start()
-	case "stop":
-		sendCommand("stop")
-	case "echo":
-		sendCommand("echo")
-	default:
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "start":
+			if err := start(); err != nil {
+				log.Fatal(err)
+			}
+		default:
+			sendCommand(strings.Join(os.Args[1:], " "))
+		}
+	} else {
 		usage()
 	}
 }
 
-func start() {
+func start() error {
 	var err error
 	var conn net.Conn
-	if sock, err = net.Listen("unix", "/tmp/h2c.sock"); err != nil {
-		log.Fatal("Listen error:", err)
+	var h2c = http2client.New()
+	if sock, err = net.Listen("unix", socketFile); err != nil {
+		return fmt.Errorf("Error creating %v: %v", socketFile, err.Error())
 	}
+	defer close()
 	stopOnSigterm()
 	for {
 		if conn, err = sock.Accept(); err != nil {
-			log.Fatal("accept error:", err)
+			return fmt.Errorf("Error reading from %v: %v", socketFile, err.Error())
+			stop()
 		}
-		go executeCommandAndCloseConnection(conn)
+		go executeCommandAndCloseConnection(h2c, conn)
+	}
+	return nil
+}
+
+func close() {
+	if err := sock.Close(); err != nil {
+		fmt.Printf("Error removing %v: %v", socketFile, err.Error())
 	}
 }
 
 func stop() {
-	sock.Close()
+	close()
 	os.Exit(0)
 }
 
@@ -81,7 +93,7 @@ func sendCommand(cmd string) {
 	}
 }
 
-func executeCommandAndCloseConnection(conn net.Conn) {
+func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	cmd, err := reader.ReadString('\n')
 	if err != nil {
@@ -91,10 +103,13 @@ func executeCommandAndCloseConnection(conn net.Conn) {
 	case "stop":
 		defer stop()
 	default:
-		fmt.Printf("Server got: %v", cmd)
-		_, err = conn.Write([]byte(cmd))
+		result, err := h2c.Execute(cmd)
 		if err != nil {
-			log.Fatal("Write:", err)
+			result = "ERROR: " + err.Error()
+		}
+		_, err = conn.Write([]byte(result))
+		if err != nil {
+			log.Fatal("Write Error:", err)
 		}
 	}
 	err = conn.Close()
