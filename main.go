@@ -99,11 +99,28 @@ func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Con
 	if err != nil {
 		log.Fatal("Error reading command from socket:", err)
 	}
-	switch strings.TrimSpace(cmd) {
-	case "stop":
-		defer stop()
-	default:
-		result, err := h2c.Execute(cmd)
+	var (
+		result string
+	)
+	cmd = strings.TrimSpace(cmd)
+	args := strings.Split(cmd, " ")
+	if len(args) < 1 {
+		err = fmt.Errorf("Received empty command.")
+	} else {
+		switch args[0] {
+		case "stop":
+			defer stop()
+		case "connect":
+			if len(args) == 2 {
+				result, err = h2c.Connect(args[1], "443")
+			} else if len(args) == 3 {
+				result, err = h2c.Connect(args[1], args[2])
+			} else {
+				result = "Usage: connect <host> <port>"
+			}
+		default:
+			err = fmt.Errorf("%v: Unknown command.")
+		}
 		if err != nil {
 			result = "ERROR: " + err.Error()
 		}
