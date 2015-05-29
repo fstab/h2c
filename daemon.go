@@ -69,7 +69,13 @@ func execute(h2c *http2client.Http2Client, cmd *Command) string {
 	)
 	switch cmd.Name {
 	case "connect":
-		result, err = h2c.Connect(cmd.Params["url"])
+		port, err := strconv.Atoi(cmd.Params["port"])
+		if err == nil {
+			fmt.Printf("Running h2c.Connect(%v:%v)\n", cmd.Params["host"], port)
+			result, err = h2c.Connect(cmd.Params["host"], port)
+		} else {
+			err = fmt.Errorf("Failed to execute connect %v:%v: port %v: %v", cmd.Params["host"], port, port, err.Error())
+		}
 	case "pid":
 		result = strconv.Itoa(os.Getpid())
 	default:

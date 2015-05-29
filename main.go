@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	validPidPattern = regexp.MustCompile("^[0-9]+$")
+	number = regexp.MustCompile("^[0-9]+$")
 )
 
 type Command struct {
@@ -29,11 +29,29 @@ func fileExists(path string) bool {
 
 func newConnectCmd(args []string) (*Command, error) {
 	if len(args) != 2 || args[0] != "connect" {
-		return nil, fmt.Errorf("Syntax error: h2c connect <url>")
+		return nil, fmt.Errorf("Syntax error: h2c connect host:port")
+	}
+	hostAndPort := strings.Split(args[1], ":")
+	if len(hostAndPort) == 1 {
+		hostAndPort = append(hostAndPort, "443")
+	}
+	if len(hostAndPort) != 2 {
+		return nil, fmt.Errorf("Syntax error: h2c connect host:port")
+	}
+	host := hostAndPort[0]
+	if len(host) < 1 {
+		return nil, fmt.Errorf("Syntax error: h2c connect host:port")
+	}
+	port := hostAndPort[1]
+	if !number.MatchString(port) {
+		return nil, fmt.Errorf("Syntax error: h2c connect host:port")
 	}
 	return &Command{
-		Name:   args[0],
-		Params: map[string]string{"url": args[1]},
+		Name: args[0],
+		Params: map[string]string{
+			"host": host,
+			"port": port,
+		},
 	}, nil
 }
 
@@ -69,7 +87,7 @@ func main() {
 			if fileExists(socketFilePath) {
 				cmd, _ := newPidCmd([]string{"pid"})
 				resp, err := sendCommand(cmd, socketFilePath)
-				if err != nil || !validPidPattern.MatchString(resp) {
+				if err != nil || !number.MatchString(resp) {
 					fmt.Fprintf(os.Stderr, "The file %v already exists. Make sure h2c is not running and remove the file.\n", socketFilePath)
 					os.Exit(-1)
 				} else {
@@ -82,6 +100,10 @@ func main() {
 				os.Exit(-1)
 			}
 		default:
+			if !fileExists(socketFilePath) {
+				fmt.Fprint(os.Stderr, "Please run 'h2c start' first.\n")
+				os.Exit(-1)
+			}
 			cmd, err := newCommand(os.Args[1:])
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err.Error())
