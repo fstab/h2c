@@ -75,7 +75,7 @@ func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Con
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	encodedCmd, err := reader.ReadString('\n')
-	cmd, err := command.Decode(encodedCmd)
+	cmd, err := command.Unmarshal(encodedCmd)
 	if err != nil {
 		handleCommunicationError("Failed to decode command: %v", err.Error())
 		return
@@ -90,7 +90,7 @@ func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Con
 }
 
 func writeResult(conn io.Writer, msg string, err error) {
-	encodedResult, err := result.New(msg, err).Encode()
+	encodedResult, err := result.New(msg, err).Marshal()
 	if err != nil {
 		handleCommunicationError("Failed to encode result: %v", err)
 		return

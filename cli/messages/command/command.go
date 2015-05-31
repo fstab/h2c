@@ -1,9 +1,8 @@
 package command
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
+	"github.com/fstab/h2c/cli/messages/marshaller"
 	"regexp"
 	"strings"
 )
@@ -32,28 +31,20 @@ func New(args []string) (*Command, error) {
 	}
 }
 
-// The resulting string is a single line, it does not contain newlines.
-func (cmd *Command) Encode() (string, error) {
-	data, err := json.Marshal(cmd)
-	if err != nil {
-		return "", fmt.Errorf("Marshalling error: %v", err.Error())
-	}
-	result := base64.StdEncoding.EncodeToString(data)
-	if strings.Contains(result, "\n") {
-		return "", fmt.Errorf("Base64 encoding error: Received newline in base64 string.")
-	}
-	return result, nil
+// Marshal returns the base64 encoding of cmd.
+//
+// The resulting string does not contain newlines,
+// so newlines can be used as separators between multiple commands.
+func (cmd *Command) Marshal() (string, error) {
+	return marshaller.Marshal(cmd)
 }
 
-func Decode(encodedCmd string) (*Command, error) {
-	jsonData, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedCmd))
-	if err != nil {
-		return nil, fmt.Errorf("Failed to decode base64 data: %v", err.Error())
-	}
+// Unmarshal is the inverse function of Marshal().
+func Unmarshal(encodedCmd string) (*Command, error) {
 	cmd := &Command{}
-	err = json.Unmarshal(jsonData, cmd)
+	err := marshaller.Unmarshal(encodedCmd, cmd)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to decode json data: %v %v", err.Error())
+		return nil, err
 	}
 	return cmd, nil
 }

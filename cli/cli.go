@@ -1,3 +1,4 @@
+// Package cli implements the user interaction on the command line.
 package cli
 
 import (
@@ -14,6 +15,7 @@ import (
 	"regexp"
 )
 
+// Run executes the command, as provided in os.Args.
 func Run() (string, error) {
 	socketFilePath := filepath.Join(os.TempDir(), "h2c.sock")
 	if len(os.Args) >= 2 {
@@ -22,7 +24,7 @@ func Run() (string, error) {
 			return "", startDaemon(socketFilePath)
 		default:
 			if !fileExists(socketFilePath) {
-				return "", fmt.Errorf("Please run '%v' first.", startCmd)
+				return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", startCmd)
 			}
 			cmd, err := command.New(os.Args[1:])
 			if err != nil {
@@ -55,7 +57,7 @@ func sendCommand(cmd *command.Command, socketFilePath string) *result.Result {
 		return communicationError(err)
 	}
 	writer := bufio.NewWriter(conn)
-	base64cmd, err := cmd.Encode()
+	base64cmd, err := cmd.Marshal()
 	if err != nil {
 		return communicationError(err)
 	}
@@ -72,7 +74,7 @@ func sendCommand(cmd *command.Command, socketFilePath string) *result.Result {
 	if err != nil {
 		return communicationError(err)
 	}
-	res, err := result.Decode(string(responseBuffer.Bytes()))
+	res, err := result.Unmarshal(string(responseBuffer.Bytes()))
 	if err != nil {
 		return communicationError(err)
 	}
