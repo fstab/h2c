@@ -1,10 +1,10 @@
+// Package daemon implements the h2c process, i.e, the process started with 'h2c start'.
 package daemon
 
 import (
 	"bufio"
 	"fmt"
-	"github.com/fstab/h2c/cli/messages/command"
-	"github.com/fstab/h2c/cli/messages/result"
+	"github.com/fstab/h2c/cli/commands"
 	"github.com/fstab/h2c/http2client"
 	"io"
 	"net"
@@ -13,8 +13,10 @@ import (
 	"strconv"
 )
 
-// The process started with 'h2c start'.
-// It keeps an h2c client instance, reads commands from the socket file, and uses the h2c client to execute these commands.
+// Start runs the h2c process, i.e, the process started with 'h2c start'.
+//
+// The h2c process keeps an Http2Client instance, reads Commands from the socket file,
+// and uses the Http2Client to execute these commands.
 func Start(socketFilePath string) error {
 	var err error
 	var conn net.Conn
@@ -55,7 +57,7 @@ func stopOnSigterm(sock io.Closer, socketFilePath string) {
 	}(sigc)
 }
 
-func execute(h2c *http2client.Http2Client, cmd *command.Command) (string, error) {
+func execute(h2c *http2client.Http2Client, cmd *commands.Command) (string, error) {
 	switch cmd.Name {
 	case "connect":
 		port, err := strconv.Atoi(cmd.Params["port"])
@@ -75,7 +77,7 @@ func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Con
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	encodedCmd, err := reader.ReadString('\n')
-	cmd, err := command.Unmarshal(encodedCmd)
+	cmd, err := commands.UnmarshalCommand(encodedCmd)
 	if err != nil {
 		handleCommunicationError("Failed to decode command: %v", err.Error())
 		return
@@ -90,7 +92,7 @@ func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Con
 }
 
 func writeResult(conn io.Writer, msg string, err error) {
-	encodedResult, err := result.New(msg, err).Marshal()
+	encodedResult, err := commands.NewResult(msg, err).Marshal()
 	if err != nil {
 		handleCommunicationError("Failed to encode result: %v", err)
 		return

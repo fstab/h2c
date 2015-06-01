@@ -1,23 +1,23 @@
-package command
+// Package commands implements the protocol between the h2c command line interface and the h2c process.
+//
+// The command line interface uses a simple request/response protocol to communicate with the h2c process:
+//
+// The cli sends a Command struct to the h2c process, and receives a Result struct as result.
+package commands
 
 import (
 	"fmt"
-	"github.com/fstab/h2c/cli/messages/marshaller"
 	"regexp"
 	"strings"
 )
 
+// Command struct is sent from the command line interface to the h2c process.
 type Command struct {
 	Name   string
 	Params map[string]string
 }
 
-type Result struct {
-	Message string
-	Error   error
-}
-
-func New(args []string) (*Command, error) {
+func NewCommand(args []string) (*Command, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("Syntax error: h2c <cmd>")
 	}
@@ -31,18 +31,18 @@ func New(args []string) (*Command, error) {
 	}
 }
 
-// Marshal returns the base64 encoding of cmd.
+// Marshal returns the base64 encoding of a Command.
 //
 // The resulting string does not contain newlines,
 // so newlines can be used as separators between multiple commands.
 func (cmd *Command) Marshal() (string, error) {
-	return marshaller.Marshal(cmd)
+	return marshal(cmd)
 }
 
-// Unmarshal is the inverse function of Marshal().
-func Unmarshal(encodedCmd string) (*Command, error) {
+// Used by the h2c process when receiving a command from the command line interface.
+func UnmarshalCommand(encodedCmd string) (*Command, error) {
 	cmd := &Command{}
-	err := marshaller.Unmarshal(encodedCmd, cmd)
+	err := unmarshal(encodedCmd, cmd)
 	if err != nil {
 		return nil, err
 	}

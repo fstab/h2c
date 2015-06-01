@@ -1,5 +1,4 @@
-// Package marshaller implements helper functions for marshalling command and result.
-package marshaller
+package commands
 
 import (
 	"encoding/base64"
@@ -8,11 +7,7 @@ import (
 	"strings"
 )
 
-// Marshal is a helper function for Command.Marshal() and Result.Marshal().
-//
-// The resulting string does not contain newlines,
-// so newlines can be used as separators between multiple encoded values.
-func Marshal(v interface{}) (string, error) {
+func marshal(v interface{}) (string, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return "", fmt.Errorf("JSON marshalling error: %v", err.Error())
@@ -24,10 +19,7 @@ func Marshal(v interface{}) (string, error) {
 	return result, nil
 }
 
-// Unmarshal is a helper function for command.Unmarshal() and result.Unmarshal().
-//
-// The result is stored in the value pointed to by v.
-func Unmarshal(data string, v interface{}) error {
+func unmarshal(data string, v interface{}) error {
 	jsonData, err := base64.StdEncoding.DecodeString(strings.TrimSpace(data))
 	if err != nil {
 		return fmt.Errorf("Failed to decode base64 data: %v", err.Error())

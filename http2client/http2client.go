@@ -1,3 +1,4 @@
+// Package http2client is a HTTP/2 client library.
 package http2client
 
 import (

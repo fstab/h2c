@@ -1,13 +1,12 @@
-// Package cli implements the user interaction on the command line.
+// Package cli implements the h2c command line interface.
 package cli
 
 import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"github.com/fstab/h2c/cli/commands"
 	"github.com/fstab/h2c/cli/daemon"
-	"github.com/fstab/h2c/cli/messages/command"
-	"github.com/fstab/h2c/cli/messages/result"
 	"io"
 	"net"
 	"os"
@@ -26,7 +25,7 @@ func Run() (string, error) {
 			if !fileExists(socketFilePath) {
 				return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", startCmd)
 			}
-			cmd, err := command.New(os.Args[1:])
+			cmd, err := commands.NewCommand(os.Args[1:])
 			if err != nil {
 				return "", err
 			}
@@ -40,7 +39,7 @@ func Run() (string, error) {
 
 func startDaemon(socketFilePath string) error {
 	if fileExists(socketFilePath) {
-		pidCmd, _ := command.New([]string{"pid"})
+		pidCmd, _ := commands.NewCommand([]string{"pid"})
 		res := sendCommand(pidCmd, socketFilePath)
 		if res.Error != nil || !isNumber(res.Message) {
 			return fmt.Errorf("The file %v already exists. Make sure h2c is not running and remove the file.\n", socketFilePath)
@@ -51,7 +50,7 @@ func startDaemon(socketFilePath string) error {
 	return daemon.Start(socketFilePath)
 }
 
-func sendCommand(cmd *command.Command, socketFilePath string) *result.Result {
+func sendCommand(cmd *commands.Command, socketFilePath string) *commands.Result {
 	conn, err := net.Dial("unix", socketFilePath)
 	if err != nil {
 		return communicationError(err)
@@ -74,15 +73,15 @@ func sendCommand(cmd *command.Command, socketFilePath string) *result.Result {
 	if err != nil {
 		return communicationError(err)
 	}
-	res, err := result.Unmarshal(string(responseBuffer.Bytes()))
+	res, err := commands.UnmarshalResult(string(responseBuffer.Bytes()))
 	if err != nil {
 		return communicationError(err)
 	}
 	return res
 }
 
-func communicationError(err error) *result.Result {
-	return result.New("", fmt.Errorf("Failed to communicate with h2c process: %v", err.Error()))
+func communicationError(err error) *commands.Result {
+	return commands.NewResult("", fmt.Errorf("Failed to communicate with h2c process: %v", err.Error()))
 }
 
 func fileExists(path string) bool {
