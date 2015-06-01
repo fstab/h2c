@@ -66,14 +66,22 @@ func (h2c *Http2Client) Get(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.host, err.Error())
 	}
-
-	frame, err := h2c.framer.ReadFrame()
-	if err != nil {
-		return "", fmt.Errorf("Failed to read next frame: %v", err.Error())
+	for {
+		frame, err := h2c.framer.ReadFrame()
+		if err != nil {
+			return "", fmt.Errorf("Failed to read next frame: %v", err.Error())
+		}
+		if frame.Header().Type == http2.FrameHeaders {
+			// TODO: Handle 404, etc.
+		}
+		if frame.Header().Type == http2.FrameData {
+			dataFrame, ok := frame.(*http2.DataFrame)
+			if !ok {
+				return "", fmt.Errorf("ERRO: Incompatable version of github.com/bradfitz/http2")
+			}
+			return string(dataFrame.Data()), nil
+		}
 	}
-	fmt.Printf("Received frame %v\n", frame)
-
-	return "", nil
 }
 
 func (h2c *Http2Client) isConnected() bool {

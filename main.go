@@ -11,7 +11,7 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err.Error())
 		os.Exit(-1)
-	} else {
+	} else if msg != "" {
 		fmt.Println(msg)
 	}
 }
