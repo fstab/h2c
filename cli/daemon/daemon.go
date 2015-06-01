@@ -39,7 +39,7 @@ func Start(socketFilePath string) error {
 
 func close(sock io.Closer, socketFilePath string) {
 	if err := sock.Close(); err != nil {
-		fmt.Printf("Error removing %v: %v", socketFilePath, err.Error())
+		fmt.Fprintf(os.Stderr, "Error removing %v: %v", socketFilePath, err.Error())
 	}
 }
 
@@ -68,6 +68,8 @@ func execute(h2c *http2client.Http2Client, cmd *commands.Command) (string, error
 		}
 	case "pid":
 		return strconv.Itoa(os.Getpid()), nil
+	case "get":
+		return h2c.Get(cmd.Params["path"])
 	default:
 		return "", fmt.Errorf("%v: unknown command", cmd.Name)
 	}

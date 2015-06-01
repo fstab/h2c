@@ -7,9 +7,14 @@ import (
 	"fmt"
 	"github.com/bradfitz/http2"
 	"github.com/bradfitz/http2/hpack"
+	"net"
 )
 
 type Http2Client struct {
+	host   string
+	port   int
+	conn   net.Conn
+	framer *http2.Framer
 }
 
 func New() *Http2Client {
@@ -17,8 +22,10 @@ func New() *Http2Client {
 }
 
 func (h2c *Http2Client) Connect(host string, port int) (string, error) {
+	if h2c.isConnected() {
+		return "", fmt.Errorf("Already connected to %v:%v.", h2c.host, h2c.port)
+	}
 	hostAndPort := fmt.Sprintf("%v:%v", host, port)
-	fmt.Printf("Connecting to %v:%v\n", hostAndPort)
 	conn, err := tls.Dial("tcp", hostAndPort, &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{http2.NextProtoTLS},
@@ -36,36 +43,41 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 		return "", fmt.Errorf("Failed to write initial settings frame to %v: %v", hostAndPort, err.Error())
 	}
 	frame, err := framer.ReadFrame()
-	if err != nil {
+	if err != nil || frame.Header().Type != http2.FrameSettings {
 		return "", fmt.Errorf("Failed to read initial settings frame from %v: %v", hostAndPort, err.Error())
 	}
-	fmt.Printf("Received frame %v\n", frame)
-	err = framer.WriteHeaders(http2.HeadersFrameParam{
+	h2c.conn = conn
+	h2c.framer = framer
+	h2c.host = host
+	h2c.port = port
+	return "", nil
+}
+
+func (h2c *Http2Client) Get(path string) (string, error) {
+	if !h2c.isConnected() {
+		return "", fmt.Errorf("Not connected.")
+	}
+	err := h2c.framer.WriteHeaders(http2.HeadersFrameParam{
 		StreamID:      1,
-		BlockFragment: makeGet(host),
+		BlockFragment: makeGet(h2c.host),
 		EndStream:     true,
 		EndHeaders:    true,
 	})
 	if err != nil {
-		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", hostAndPort, err.Error())
+		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.host, err.Error())
 	}
-	frame, err = framer.ReadFrame()
+
+	frame, err := h2c.framer.ReadFrame()
 	if err != nil {
-		return "", fmt.Errorf("Failed to read initial settings frame from %v: %v", hostAndPort, err.Error())
+		return "", fmt.Errorf("Failed to read next frame: %v", err.Error())
 	}
 	fmt.Printf("Received frame %v\n", frame)
-	frame, err = framer.ReadFrame()
-	if err != nil {
-		return "", fmt.Errorf("Failed to read initial settings frame from %v: %v", hostAndPort, err.Error())
-	}
-	fmt.Printf("Received frame %v\n", frame)
-	frame, err = framer.ReadFrame()
-	if err != nil {
-		return "", fmt.Errorf("Failed to read initial settings frame from %v: %v", hostAndPort, err.Error())
-	}
-	fmt.Printf("Received frame %v\n", frame)
-	conn.Close()
-	return fmt.Sprintf("Received frame %v", frame), nil
+
+	return "", nil
+}
+
+func (h2c *Http2Client) isConnected() bool {
+	return h2c.conn != nil || h2c.framer != nil || h2c.host != "" || h2c.port != 0
 }
 
 func makeGet(host string) []byte {

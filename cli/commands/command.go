@@ -24,6 +24,8 @@ func NewCommand(args []string) (*Command, error) {
 	switch args[0] {
 	case "connect":
 		return newConnectCmd(args)
+	case "get":
+		return newGetCmd(args)
 	case "pid":
 		return newPidCmd(args)
 	default:
@@ -84,5 +86,17 @@ func newPidCmd(args []string) (*Command, error) {
 	return &Command{
 		Name:   args[0],
 		Params: make(map[string]string),
+	}, nil
+}
+
+func newGetCmd(args []string) (*Command, error) {
+	if len(args) != 2 || args[0] != "get" {
+		return nil, fmt.Errorf("Syntax error: h2c get <path>")
+	}
+	return &Command{
+		Name: args[0],
+		Params: map[string]string{
+			"path": args[1],
+		},
 	}, nil
 }

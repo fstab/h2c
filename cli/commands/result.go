@@ -3,11 +3,16 @@ package commands
 // Result is sent from the h2c process to the command line interface.
 type Result struct {
 	Message string
-	Error   error
+	Error   *string // Should be type error, but this doesn't seem to work well with JSON marshalling.
 }
 
 func NewResult(msg string, err error) *Result {
-	return &Result{msg, err}
+	if err == nil {
+		return &Result{msg, nil}
+	} else {
+		errString := err.Error()
+		return &Result{msg, &errString}
+	}
 }
 
 // Marshal returns the base64 encoding of Result.

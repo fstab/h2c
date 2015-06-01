@@ -30,7 +30,11 @@ func Run() (string, error) {
 				return "", err
 			}
 			res := sendCommand(cmd, socketFilePath)
-			return res.Message, res.Error
+			if res.Error != nil {
+				return res.Message, fmt.Errorf("%v", *res.Error)
+			} else {
+				return res.Message, nil
+			}
 		}
 	} else {
 		return "", fmt.Errorf(usage())
@@ -96,6 +100,6 @@ func isNumber(s string) bool {
 func usage() string {
 	return "Usage:\n" +
 		startCmd + "\n" +
-		"h2s connect <host>:<port>\n" +
-		"h2s get <path>"
+		"h2c connect <host>:<port>\n" +
+		"h2c get <path>"
 }
