@@ -28,6 +28,8 @@ func NewCommand(args []string) (*Command, error) {
 		return newGetCmd(args)
 	case "pid":
 		return newPidCmd(args)
+	case "stop":
+		return newStopCmd(args)
 	default:
 		return nil, fmt.Errorf("Syntax error: Command %v unknown", args[0])
 	}
@@ -98,5 +100,15 @@ func newGetCmd(args []string) (*Command, error) {
 		Params: map[string]string{
 			"path": args[1],
 		},
+	}, nil
+}
+
+func newStopCmd(args []string) (*Command, error) {
+	if len(args) != 1 || args[0] != "stop" {
+		return nil, fmt.Errorf("Syntax error: h2c stop")
+	}
+	return &Command{
+		Name:   args[0],
+		Params: make(map[string]string),
 	}, nil
 }

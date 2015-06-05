@@ -22,12 +22,16 @@ func Run() (string, error) {
 		case "start":
 			return "", startDaemon(socketFilePath)
 		default:
-			if !fileExists(socketFilePath) {
-				return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", startCmd)
+			cmd, syntaxError := commands.NewCommand(os.Args[1:])
+			if syntaxError != nil {
+				return "", syntaxError
 			}
-			cmd, err := commands.NewCommand(os.Args[1:])
-			if err != nil {
-				return "", err
+			if !fileExists(socketFilePath) {
+				if os.Args[1] == "stop" {
+					return "", fmt.Errorf("h2c is not running.")
+				} else {
+					return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", startCmd)
+				}
 			}
 			res := sendCommand(cmd, socketFilePath)
 			if res.Error != nil {
@@ -101,5 +105,6 @@ func usage() string {
 	return "Usage:\n" +
 		startCmd + "\n" +
 		"h2c connect <host>:<port>\n" +
-		"h2c get <path>"
+		"h2c get <path>\n" +
+		"h2c stop"
 }
