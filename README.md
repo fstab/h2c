@@ -31,7 +31,7 @@ go install github.com/fstab/h2c
 Related Work
 ------------
 
-`h2c` is built using Brad Fitzpatrick's excellent [http2 support for Go](https://github.com/bradfitz/http2). There is an HTTP/2 console debugger included in bradfitz/http2, but just like `h2c` it is currently only a quick few hour hack, so it is hard to tell if they aim at the same kind of tool.
+`h2c` is built using Brad Fitzpatrick's excellent [http2 support for Go](https://github.com/bradfitz/http2). There is an HTTP/2 console debugger included in [bradfitz/http2](https://github.com/bradfitz/http2), but just like `h2c`, it is currently only a quick few hour hack, so it is hard to tell if they aim at the same kind of tool.
 
 LICENSE
 -------
