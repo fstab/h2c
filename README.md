@@ -22,7 +22,7 @@ TODO
 How to Build from Source
 ------------------------
 
-If you have [go 1.4.2](https://golang.org/dl/). With [go](https://golang.org) set up, you can download, compile, and install `h2c` as follows:
+`h2c` is developed with [go 1.4.2](https://golang.org/dl/). With [go](https://golang.org) set up, you can download, compile, and install `h2c` as follows:
 
 ```bash
 go install github.com/fstab/h2c
