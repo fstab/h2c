@@ -59,7 +59,7 @@ func (h2c *Http2Client) Get(path string) (string, error) {
 	}
 	err := h2c.framer.WriteHeaders(http2.HeadersFrameParam{
 		StreamID:      1,
-		BlockFragment: makeGet(h2c.host),
+		BlockFragment: makeGet(h2c.host, path),
 		EndStream:     true,
 		EndHeaders:    true,
 	})
@@ -88,14 +88,14 @@ func (h2c *Http2Client) isConnected() bool {
 	return h2c.conn != nil || h2c.framer != nil || h2c.host != "" || h2c.port != 0
 }
 
-func makeGet(host string) []byte {
+func makeGet(host, path string) []byte {
 
 	var buf bytes.Buffer
 	encoder := hpack.NewEncoder(&buf)
 
 	encoder.WriteField(hpack.HeaderField{Name: ":authority", Value: host})
 	encoder.WriteField(hpack.HeaderField{Name: ":method", Value: "GET"})
-	encoder.WriteField(hpack.HeaderField{Name: ":path", Value: "/index.html"})
+	encoder.WriteField(hpack.HeaderField{Name: ":path", Value: path})
 	encoder.WriteField(hpack.HeaderField{Name: ":scheme", Value: "https"})
 
 	return buf.Bytes()
