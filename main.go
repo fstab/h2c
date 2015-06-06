@@ -4,14 +4,22 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/cli"
 	"os"
+	"runtime"
 )
 
 func main() {
-	msg, err := cli.Run()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err.Error())
+	switch runtime.GOOS {
+	case "nacl", "plan9", "windows":
+		fmt.Fprintf(os.Stderr, "The current version of h2c uses 'unix' sockets, which are not supported on Windows.\n")
+		fmt.Fprintf(os.Stderr, "Sorry, we will provide a Windows-compatible h2c version as soon as possible.\n")
 		os.Exit(-1)
-	} else if msg != "" {
-		fmt.Println(msg)
+	default:
+		msg, err := cli.Run()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err.Error())
+			os.Exit(-1)
+		} else if msg != "" {
+			fmt.Println(msg)
+		}
 	}
 }
