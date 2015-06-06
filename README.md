@@ -38,6 +38,8 @@ LICENSE
 
 `h2c` is licensed under the [Apache License, Version 2.0](LICENSE)
 
+`h2c` is built using [Go](https://golang.org/) and [bradfitz/http2](https://github.com/bradfitz/http2). Both are licensed under Google's [Go license](https://code.google.com/p/go/source/browse/LICENSE).
+
 Who We Are
 ----------
 
