@@ -4,8 +4,8 @@ email: fabian@consol.de
 description: > # this means to ignore newlines until "baseurl:"
   REST, HTTP/2, Java Servlets, Go, and h2c.
 baseurl: "/h2c" # the subpath of your site, e.g. /blog/
-# url: "https://fstab.github.io" # the base hostname & protocol for your site
-url: "http://192.168.59.103:4000"
+url: "https://fstab.github.io" # the base hostname & protocol for your site
+# url: "http://192.168.59.103:4000"
 twitter_username: fstab
 github_username:  fstab/h2c
 
