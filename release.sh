@@ -7,7 +7,7 @@
 
 docker run -v $GOPATH:/home/go -t -i fstab/gox gox github.com/fstab/h2c
 
-VERSION=0.0.1
+VERSION=v0.0.1
 
 rm -rf /tmp/h2c-$VERSION
 mkdir /tmp/h2c-$VERSION
