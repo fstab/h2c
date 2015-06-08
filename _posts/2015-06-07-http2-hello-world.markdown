@@ -1,7 +1,8 @@
 ---
-layout: post
-title:  "HTTP/2 Hello, World!"
-date:   2015-06-07 13:40:54
+layout:   post
+title:    "HTTP/2 Hello, World!"
+date:     2015-06-07 13:40:54
+comments: true
 ---
 
 [HTTP/2], the new version of the HTTP protocol, provides a lot of interesting features for REST-based server-to-server communication:

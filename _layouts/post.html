@@ -12,4 +12,8 @@ layout: default
     {{ content }}
   </article>
 
+  {% if page.comments %}
+    {% include disqus.html %}
+  {% endif %}
+
 </div>
