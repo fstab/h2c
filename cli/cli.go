@@ -52,7 +52,7 @@ func startDaemon(socketFilePath string) error {
 		if res.Error != nil || !isNumber(res.Message) {
 			return fmt.Errorf("The file %v already exists. Make sure h2c is not running and remove the file.\n", socketFilePath)
 		} else {
-			return fmt.Errorf("h2c already running with PID %v\n", res.Error)
+			return fmt.Errorf("h2c already running with PID %v\n", res.Message)
 		}
 	}
 	return daemon.Start(socketFilePath)

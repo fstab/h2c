@@ -77,7 +77,7 @@ func (h2c *Http2Client) Get(path string) (string, error) {
 		if frame.Header().Type == http2.FrameData {
 			dataFrame, ok := frame.(*http2.DataFrame)
 			if !ok {
-				return "", fmt.Errorf("ERRO: Incompatable version of github.com/bradfitz/http2")
+				return "", fmt.Errorf("ERROR: Incompatable version of github.com/bradfitz/http2")
 			}
 			return string(dataFrame.Data()), nil
 		}
