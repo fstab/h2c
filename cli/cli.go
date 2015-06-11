@@ -55,7 +55,11 @@ func startDaemon(socketFilePath string) error {
 			return fmt.Errorf("h2c already running with PID %v\n", res.Message)
 		}
 	}
-	return daemon.Start(socketFilePath)
+	sock, err := net.Listen("unix", socketFilePath)
+	if err != nil {
+		return fmt.Errorf("Error creating %v: %v", socketFilePath, err.Error())
+	}
+	return daemon.Run(sock)
 }
 
 func sendCommand(cmd *commands.Command, socketFilePath string) *commands.Result {

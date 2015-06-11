@@ -13,47 +13,43 @@ import (
 	"strconv"
 )
 
-// Start runs the h2c process, i.e, the process started with 'h2c start'.
+// Run the h2c process, i.e, the process started with 'h2c start'.
 //
 // The h2c process keeps an Http2Client instance, reads Commands from the socket file,
 // and uses the Http2Client to execute these commands.
-func Start(socketFilePath string) error {
-	var err error
+//
+// The socket will be closed when the h2c process is terminated.
+func Run(sock net.Listener) error {
 	var conn net.Conn
+	var err error
 	var h2c = http2client.New()
-	sock, err := net.Listen("unix", socketFilePath)
-	if err != nil {
-		return fmt.Errorf("Error creating %v: %v", socketFilePath, err.Error())
-	}
-	defer close(sock, socketFilePath)
-	stopOnSigterm(sock, socketFilePath)
+	stopOnSigterm(sock)
 	for {
 		if conn, err = sock.Accept(); err != nil {
-			return fmt.Errorf("Error reading from %v: %v", socketFilePath, err.Error())
-			stop(sock, socketFilePath)
+			return fmt.Errorf("Error while waiting for commands: %v", err.Error())
+			stop(sock)
 		}
-		go executeCommandAndCloseConnection(h2c, conn, sock, socketFilePath)
+		go executeCommandAndCloseConnection(h2c, conn, sock)
 	}
-	return nil
 }
 
-func close(sock io.Closer, socketFilePath string) {
+func close(sock io.Closer) {
 	if err := sock.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error removing %v: %v", socketFilePath, err.Error())
+		fmt.Fprintf(os.Stderr, "Error terminating the h2c process: %v", err.Error())
 	}
 }
 
-func stop(sock io.Closer, socketFilePath string) {
-	close(sock, socketFilePath)
+func stop(sock net.Listener) {
+	close(sock)
 	os.Exit(0)
 }
 
-func stopOnSigterm(sock io.Closer, socketFilePath string) {
+func stopOnSigterm(sock net.Listener) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, os.Interrupt)
 	go func(c chan os.Signal) {
 		<-c // Wait for a SIGINT
-		stop(sock, socketFilePath)
+		stop(sock)
 	}(sigc)
 }
 
@@ -75,7 +71,7 @@ func execute(h2c *http2client.Http2Client, cmd *commands.Command) (string, error
 	}
 }
 
-func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn, sock io.Closer, socketFilePath string) {
+func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn, sock net.Listener) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	encodedCmd, err := reader.ReadString('\n')
@@ -86,7 +82,7 @@ func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Con
 	}
 	if cmd.Name == "stop" {
 		writeResult(conn, "", nil)
-		stop(sock, socketFilePath)
+		stop(sock)
 	} else {
 		msg, err := execute(h2c, cmd)
 		writeResult(conn, msg, err)
