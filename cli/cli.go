@@ -10,30 +10,37 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"regexp"
 )
 
+// IpcManager maintains the socket for communication between the cli and the h2c process.
+type IpcManager interface {
+	IsListening() bool
+	Listen() (net.Listener, error)
+	Dial() (net.Conn, error)
+	InUseErrorMessage() string
+}
+
 // Run executes the command, as provided in os.Args.
 func Run() (string, error) {
-	socketFilePath := filepath.Join(os.TempDir(), "h2c.sock")
+	ipc := NewIpcManager()
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "start":
-			return "", startDaemon(socketFilePath)
+			return "", startDaemon(ipc)
 		default:
 			cmd, syntaxError := commands.NewCommand(os.Args[1:])
 			if syntaxError != nil {
 				return "", syntaxError
 			}
-			if !fileExists(socketFilePath) {
+			if !ipc.IsListening() {
 				if os.Args[1] == "stop" {
 					return "", fmt.Errorf("h2c is not running.")
 				} else {
 					return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", startCmd)
 				}
 			}
-			res := sendCommand(cmd, socketFilePath)
+			res := sendCommand(cmd, ipc)
 			if res.Error != nil {
 				return res.Message, fmt.Errorf("%v", *res.Error)
 			} else {
@@ -45,25 +52,25 @@ func Run() (string, error) {
 	}
 }
 
-func startDaemon(socketFilePath string) error {
-	if fileExists(socketFilePath) {
+func startDaemon(ipc IpcManager) error {
+	if ipc.IsListening() {
 		pidCmd, _ := commands.NewCommand([]string{"pid"})
-		res := sendCommand(pidCmd, socketFilePath)
+		res := sendCommand(pidCmd, ipc)
 		if res.Error != nil || !isNumber(res.Message) {
-			return fmt.Errorf("The file %v already exists. Make sure h2c is not running and remove the file.\n", socketFilePath)
+			return fmt.Errorf(ipc.InUseErrorMessage())
 		} else {
 			return fmt.Errorf("h2c already running with PID %v\n", res.Message)
 		}
 	}
-	sock, err := net.Listen("unix", socketFilePath)
+	sock, err := ipc.Listen()
 	if err != nil {
-		return fmt.Errorf("Error creating %v: %v", socketFilePath, err.Error())
+		return err
 	}
 	return daemon.Run(sock)
 }
 
-func sendCommand(cmd *commands.Command, socketFilePath string) *commands.Result {
-	conn, err := net.Dial("unix", socketFilePath)
+func sendCommand(cmd *commands.Command, ipc IpcManager) *commands.Result {
+	conn, err := ipc.Dial()
 	if err != nil {
 		return communicationError(err)
 	}
@@ -94,11 +101,6 @@ func sendCommand(cmd *commands.Command, socketFilePath string) *commands.Result 
 
 func communicationError(err error) *commands.Result {
 	return commands.NewResult("", fmt.Errorf("Failed to communicate with h2c process: %v", err.Error()))
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func isNumber(s string) bool {
