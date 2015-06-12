@@ -59,7 +59,7 @@ func startDaemon(ipc IpcManager) error {
 		if res.Error != nil || !isNumber(res.Message) {
 			return fmt.Errorf(ipc.InUseErrorMessage())
 		} else {
-			return fmt.Errorf("h2c already running with PID %v\n", res.Message)
+			return fmt.Errorf("h2c already running with PID %v", res.Message)
 		}
 	}
 	sock, err := ipc.Listen()
@@ -90,7 +90,11 @@ func sendCommand(cmd *commands.Command, ipc IpcManager) *commands.Result {
 	responseBuffer := bytes.NewBuffer(nil)
 	_, err = io.Copy(responseBuffer, conn)
 	if err != nil {
-		return communicationError(err)
+		if cmd.Name == "stop" && len(responseBuffer.Bytes()) > 0 {
+			// Ignore. This seems to happen on windows when the connection is closed because of the 'stop' command.
+		} else {
+			return communicationError(err)
+		}
 	}
 	res, err := commands.UnmarshalResult(string(responseBuffer.Bytes()))
 	if err != nil {
