@@ -92,15 +92,33 @@ func newPidCmd(args []string) (*Command, error) {
 }
 
 func newGetCmd(args []string) (*Command, error) {
-	if len(args) != 2 || args[0] != "get" {
-		return nil, fmt.Errorf("Syntax error: h2c get <path>")
+	syntaxError := fmt.Errorf(`
+	Syntax error: h2c get [options] <path>
+	Available options are:
+	  -i, --include: Show response headers in the output. This includes all headers
+					 in the connection, not just the headers received with the
+					 current response.`)
+	result := &Command{
+		Name:   "get",
+		Params: make(map[string]string),
 	}
-	return &Command{
-		Name: args[0],
-		Params: map[string]string{
-			"path": args[1],
-		},
-	}, nil
+	if len(args) < 2 || args[0] != "get" {
+		return nil, syntaxError
+	}
+	if args[1] == "-i" || args[1] == "--include" {
+		result.Params["include-headers"] = "true"
+		if len(args) != 3 {
+			return nil, syntaxError
+		}
+		result.Params["path"] = args[2]
+	} else {
+		result.Params["include-headers"] = "false"
+		if len(args) != 2 {
+			return nil, syntaxError
+		}
+		result.Params["path"] = args[1]
+	}
+	return result, nil
 }
 
 func newStopCmd(args []string) (*Command, error) {
