@@ -65,7 +65,7 @@ func execute(h2c *http2client.Http2Client, cmd *commands.Command) (string, error
 	case "pid":
 		return strconv.Itoa(os.Getpid()), nil
 	case "get":
-		return h2c.Get(cmd.Params["path"])
+		return h2c.Get(cmd.Params["path"], cmd.Params["include-headers"] == "true")
 	default:
 		return "", fmt.Errorf("%v: unknown command", cmd.Name)
 	}

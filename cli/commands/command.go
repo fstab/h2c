@@ -92,12 +92,10 @@ func newPidCmd(args []string) (*Command, error) {
 }
 
 func newGetCmd(args []string) (*Command, error) {
-	syntaxError := fmt.Errorf(`
-	Syntax error: h2c get [options] <path>
-	Available options are:
-	  -i, --include: Show response headers in the output. This includes all headers
-					 in the connection, not just the headers received with the
-					 current response.`)
+	syntaxError := fmt.Errorf(
+		`Syntax error: h2c get [options] <path>
+Available options are:
+  -i, --include: Show response headers in the output.`)
 	result := &Command{
 		Name:   "get",
 		Params: make(map[string]string),

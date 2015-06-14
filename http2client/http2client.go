@@ -8,6 +8,7 @@ import (
 	"github.com/bradfitz/http2"
 	"github.com/bradfitz/http2/hpack"
 	"net"
+	"sort"
 )
 
 type Http2Client struct {
@@ -94,8 +95,11 @@ func (h2c *Http2Client) handleIncomingFrames() {
 				s.receivedHeaders[f.Name] = f.Value
 			}
 			decoder := hpack.NewDecoder(4096, headerCallback)
-			bf := headersFrame.HeaderBlockFragment()
-			decoder.DecodeFull(bf)
+			blockFragment := headersFrame.HeaderBlockFragment()
+			decoder.Write(blockFragment)
+			// TODO: Handler continuations
+			// TODO: error handling
+			decoder.Close()
 			if headersFrame.StreamEnded() && s.onClosed != nil {
 				s.onClosed <- s
 			}
@@ -130,7 +134,7 @@ func (h2c *Http2Client) nextAvailableStreamId() uint32 {
 	return result
 }
 
-func (h2c *Http2Client) Get(path string) (string, error) {
+func (h2c *Http2Client) Get(path string, includeHeaders bool) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
 	}
@@ -154,7 +158,21 @@ func (h2c *Http2Client) Get(path string) (string, error) {
 	}
 	received := <-h2c.streams[streamId].onClosed
 	// TODO: Check for errors in received headers
-	return string(received.receivedData.Bytes()), nil
+	headers := ""
+	if includeHeaders {
+		sortedHeaderNames := make([]string, len(received.receivedHeaders))
+		i := 0
+		for name, _ := range received.receivedHeaders {
+			sortedHeaderNames[i] = name
+			i++
+		}
+		sort.Strings(sortedHeaderNames)
+		for _, name := range sortedHeaderNames {
+			headers += name + ": " + received.receivedHeaders[name] + "\n"
+		}
+		headers += "\n"
+	}
+	return headers + string(received.receivedData.Bytes()), nil
 }
 
 func (h2c *Http2Client) isConnected() bool {
