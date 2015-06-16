@@ -34,6 +34,14 @@ var commands = []*command{
 		usage: "h2c get [options] <path>",
 	},
 	&command{
+		name:  "set",
+		nArgs: 2,
+		areArgsValid: func(args []string) bool {
+			return true
+		},
+		usage: "h2c set <header-name> <header-value>",
+	},
+	&command{
 		name:  "pid",
 		nArgs: 0,
 		usage: "h2c pid",

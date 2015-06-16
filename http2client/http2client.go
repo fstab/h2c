@@ -14,12 +14,15 @@ import (
 )
 
 type Http2Client struct {
-	host    string
-	port    int
-	conn    net.Conn
-	streams map[uint32]*stream // StreamID -> *stream
-	framer  *http2.Framer
-	err     error
+	host              string
+	port              int
+	conn              net.Conn
+	streams           map[uint32]*stream // StreamID -> *stream
+	framer            *http2.Framer
+	headers           []hpack.HeaderField // filled with 'h2c set'
+	headerBlockBuffer bytes.Buffer
+	headerEncoder     *hpack.Encoder // encodes headers, maintains copy of server's dynamic table
+	err               error          // if != nil, the Http2Client becomes unusable
 }
 
 type stream struct {
@@ -69,6 +72,9 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 	h2c.host = host
 	h2c.port = port
 	h2c.streams = make(map[uint32]*stream)
+	h2c.headerEncoder = hpack.NewEncoder(&h2c.headerBlockBuffer)
+	h2c.headers = make([]hpack.HeaderField, 0)
+
 	go h2c.handleIncomingFrames()
 	return "", nil
 }
@@ -149,9 +155,13 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds i
 		//		receivedData:    bytes.Buffer,
 		onClosed: make(chan *stream),
 	}
-	err := h2c.framer.WriteHeaders(http2.HeadersFrameParam{
+	blockFragment, err := h2c.makeGetBlockFragment(h2c.host, path)
+	if err != nil {
+		return "", fmt.Errorf("Failed to encode headers: %v", err.Error())
+	}
+	err = h2c.framer.WriteHeaders(http2.HeadersFrameParam{
 		StreamID:      streamId,
-		BlockFragment: makeGet(h2c.host, path),
+		BlockFragment: blockFragment,
 		EndStream:     true,
 		EndHeaders:    true,
 	})
@@ -182,25 +192,44 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds i
 		}
 		return headers + string(received.receivedData.Bytes()), nil
 	case <-timeout:
+		// TODO: Send RST_STREAM frame
 		return "", errors.New("Timeout while waiting for response.")
 	}
+}
+
+func (h2c *Http2Client) SetHeader(name, value string) (string, error) {
+	for name[len(name)-1] == ':' {
+		name = name[:len(name)-1]
+	}
+	h2c.headers = append(h2c.headers, hpack.HeaderField{Name: name, Value: value})
+	return "", nil
 }
 
 func (h2c *Http2Client) isConnected() bool {
 	return h2c.conn != nil || h2c.framer != nil || h2c.host != "" || h2c.port != 0
 }
 
-func makeGet(host, path string) []byte {
+func (h2c *Http2Client) makeGetBlockFragment(host, path string) ([]byte, error) {
+	var err error
+	defer h2c.headerBlockBuffer.Reset()
+	h2c.appendHeader(hpack.HeaderField{Name: ":authority", Value: host}, &err)
+	h2c.appendHeader(hpack.HeaderField{Name: ":method", Value: "GET"}, &err)
+	h2c.appendHeader(hpack.HeaderField{Name: ":path", Value: path}, &err)
+	h2c.appendHeader(hpack.HeaderField{Name: ":scheme", Value: "https"}, &err)
+	for _, field := range h2c.headers {
+		h2c.appendHeader(field, &err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return h2c.headerBlockBuffer.Bytes(), nil
+}
 
-	var buf bytes.Buffer
-	encoder := hpack.NewEncoder(&buf)
-
-	encoder.WriteField(hpack.HeaderField{Name: ":authority", Value: host})
-	encoder.WriteField(hpack.HeaderField{Name: ":method", Value: "GET"})
-	encoder.WriteField(hpack.HeaderField{Name: ":path", Value: path})
-	encoder.WriteField(hpack.HeaderField{Name: ":scheme", Value: "https"})
-
-	return buf.Bytes()
+func (h2c *Http2Client) appendHeader(headerField hpack.HeaderField, err *error) {
+	if *err != nil {
+		return
+	}
+	*err = h2c.headerEncoder.WriteField(headerField)
 }
 
 func (h2c *Http2Client) die(err error) {

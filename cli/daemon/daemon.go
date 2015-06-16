@@ -62,6 +62,8 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 		return strconv.Itoa(os.Getpid()), nil
 	case "get":
 		return executeGet(h2c, cmd)
+	case "set":
+		return h2c.SetHeader(cmd.Args[0], cmd.Args[1])
 	default:
 		return "", fmt.Errorf("%v: unknown command", cmd.Name)
 	}
