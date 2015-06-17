@@ -1,6 +1,6 @@
 // +build !windows
 
-package cli
+package rpc
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 )
 
+// Implements rpc.IpcManager
 type UnixSocketConnection struct {
 	socketFilePath string
 }

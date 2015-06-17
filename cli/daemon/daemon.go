@@ -4,13 +4,14 @@ package daemon
 import (
 	"bufio"
 	"fmt"
-	"github.com/fstab/h2c/cli/commands"
+	"github.com/fstab/h2c/cli/rpc"
 	"github.com/fstab/h2c/http2client"
 	"io"
 	"net"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 )
 
 // Run the h2c process, i.e, the process started with 'h2c start'.
@@ -53,29 +54,48 @@ func stopOnSigterm(sock net.Listener) {
 	}(sigc)
 }
 
-func execute(h2c *http2client.Http2Client, cmd *commands.Command) (string, error) {
+func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 	switch cmd.Name {
 	case "connect":
-		port, err := strconv.Atoi(cmd.Params["port"])
-		if err == nil {
-			return h2c.Connect(cmd.Params["host"], port)
-		} else {
-			return "", fmt.Errorf("%v: Illegal port.", cmd.Params["port"])
-		}
+		return executeConnect(h2c, cmd)
 	case "pid":
 		return strconv.Itoa(os.Getpid()), nil
 	case "get":
-		return h2c.Get(cmd.Params["path"], cmd.Params["include-headers"] == "true")
+		return executeGet(h2c, cmd)
 	default:
 		return "", fmt.Errorf("%v: unknown command", cmd.Name)
 	}
+}
+
+func executeConnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	hostAndPort := strings.Split(cmd.Args[0], ":")
+	if len(hostAndPort) == 1 {
+		hostAndPort = append(hostAndPort, "443")
+	}
+	if len(hostAndPort) != 2 {
+		return "", fmt.Errorf("%v: Invalid hostanme", cmd.Args[0])
+	}
+	host := hostAndPort[0]
+	if len(host) < 1 {
+		return "", fmt.Errorf("%v: Invalid hostname", cmd.Args[0])
+	}
+	port, err := strconv.Atoi(hostAndPort[1])
+	if err != nil {
+		return "", fmt.Errorf("%v: Invalid port", hostAndPort[1])
+	}
+	return h2c.Connect(host, port)
+}
+
+func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	_, includeHeaders := cmd.Options["--include"]
+	return h2c.Get(cmd.Args[0], includeHeaders)
 }
 
 func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn, sock net.Listener) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	encodedCmd, err := reader.ReadString('\n')
-	cmd, err := commands.UnmarshalCommand(encodedCmd)
+	cmd, err := rpc.UnmarshalCommand(encodedCmd)
 	if err != nil {
 		handleCommunicationError("Failed to decode command: %v", err.Error())
 		return
@@ -90,7 +110,7 @@ func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Con
 }
 
 func writeResult(conn io.Writer, msg string, err error) {
-	encodedResult, err := commands.NewResult(msg, err).Marshal()
+	encodedResult, err := rpc.NewResult(msg, err).Marshal()
 	if err != nil {
 		handleCommunicationError("Failed to encode result: %v", err)
 		return

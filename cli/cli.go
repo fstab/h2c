@@ -5,56 +5,44 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/fstab/h2c/cli/commands"
+	"github.com/fstab/h2c/cli/cmdline"
 	"github.com/fstab/h2c/cli/daemon"
+	"github.com/fstab/h2c/cli/rpc"
 	"io"
-	"net"
 	"os"
 	"regexp"
 )
 
-// IpcManager maintains the socket for communication between the cli and the h2c process.
-type IpcManager interface {
-	IsListening() bool
-	Listen() (net.Listener, error)
-	Dial() (net.Conn, error)
-	InUseErrorMessage() string
-}
-
 // Run executes the command, as provided in os.Args.
 func Run() (string, error) {
-	ipc := NewIpcManager()
-	if len(os.Args) >= 2 {
-		switch os.Args[1] {
-		case "start":
-			return "", startDaemon(ipc)
-		default:
-			cmd, syntaxError := commands.NewCommand(os.Args[1:])
-			if syntaxError != nil {
-				return "", syntaxError
-			}
-			if !ipc.IsListening() {
-				if os.Args[1] == "stop" {
-					return "", fmt.Errorf("h2c is not running.")
-				} else {
-					return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", startCmd)
-				}
-			}
-			res := sendCommand(cmd, ipc)
-			if res.Error != nil {
-				return res.Message, fmt.Errorf("%v", *res.Error)
+	ipc := rpc.NewIpcManager()
+	cmd, err := cmdline.Parse(os.Args[1:])
+	if err != nil {
+		return "", err
+	}
+	switch cmd.Name {
+	case "start":
+		return "", startDaemon(ipc)
+	default:
+		if !ipc.IsListening() {
+			if cmd.Name == "stop" {
+				return "", fmt.Errorf("h2c is not running.")
 			} else {
-				return res.Message, nil
+				return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", startCmd)
 			}
 		}
-	} else {
-		return "", fmt.Errorf(usage())
+		res := sendCommand(cmd, ipc)
+		if res.Error != nil {
+			return res.Message, fmt.Errorf("%v", *res.Error)
+		} else {
+			return res.Message, nil
+		}
 	}
 }
 
-func startDaemon(ipc IpcManager) error {
+func startDaemon(ipc rpc.IpcManager) error {
 	if ipc.IsListening() {
-		pidCmd, _ := commands.NewCommand([]string{"pid"})
+		pidCmd, _ := rpc.NewCommand("pid", make([]string, 0), make(map[string]string))
 		res := sendCommand(pidCmd, ipc)
 		if res.Error != nil || !isNumber(res.Message) {
 			return fmt.Errorf(ipc.InUseErrorMessage())
@@ -69,7 +57,7 @@ func startDaemon(ipc IpcManager) error {
 	return daemon.Run(sock)
 }
 
-func sendCommand(cmd *commands.Command, ipc IpcManager) *commands.Result {
+func sendCommand(cmd *rpc.Command, ipc rpc.IpcManager) *rpc.Result {
 	conn, err := ipc.Dial()
 	if err != nil {
 		return communicationError(err)
@@ -96,25 +84,17 @@ func sendCommand(cmd *commands.Command, ipc IpcManager) *commands.Result {
 			return communicationError(err)
 		}
 	}
-	res, err := commands.UnmarshalResult(string(responseBuffer.Bytes()))
+	res, err := rpc.UnmarshalResult(string(responseBuffer.Bytes()))
 	if err != nil {
 		return communicationError(err)
 	}
 	return res
 }
 
-func communicationError(err error) *commands.Result {
-	return commands.NewResult("", fmt.Errorf("Failed to communicate with h2c process: %v", err.Error()))
+func communicationError(err error) *rpc.Result {
+	return rpc.NewResult("", fmt.Errorf("Failed to communicate with h2c process: %v", err.Error()))
 }
 
 func isNumber(s string) bool {
 	return regexp.MustCompile("^[0-9]+$").MatchString(s)
-}
-
-func usage() string {
-	return "Usage:\n" +
-		startCmd + "\n" +
-		"h2c connect <host>:<port>\n" +
-		"h2c get <path>\n" +
-		"h2c stop"
 }

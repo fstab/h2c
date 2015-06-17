@@ -1,4 +1,4 @@
-package commands
+package rpc
 
 import (
 	"encoding/base64"

@@ -1,12 +1,13 @@
 // +build windows
 
-package cli
+package rpc
 
 import (
 	"fmt"
 	"net"
 )
 
+// Implements rpc.IpcManager
 type TcpSocketConnection struct {
 	port int
 }
