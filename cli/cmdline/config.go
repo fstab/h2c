@@ -15,7 +15,7 @@ var commands = []*command{
 	&command{
 		name:  "start",
 		nArgs: 0,
-		usage: "h2c start",
+		usage: StartCmd,
 	},
 	&command{
 		name:  "connect",

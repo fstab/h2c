@@ -28,7 +28,7 @@ func Run() (string, error) {
 			if cmd.Name == "stop" {
 				return "", fmt.Errorf("h2c is not running.")
 			} else {
-				return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", startCmd)
+				return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", cmdline.StartCmd)
 			}
 		}
 		res := sendCommand(cmd, ipc)
