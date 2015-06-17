@@ -4,11 +4,13 @@ package http2client
 import (
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"github.com/bradfitz/http2"
 	"github.com/bradfitz/http2/hpack"
 	"net"
 	"sort"
+	"time"
 )
 
 type Http2Client struct {
@@ -134,7 +136,7 @@ func (h2c *Http2Client) nextAvailableStreamId() uint32 {
 	return result
 }
 
-func (h2c *Http2Client) Get(path string, includeHeaders bool) (string, error) {
+func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
 	}
@@ -156,23 +158,32 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.host, err.Error())
 	}
-	received := <-h2c.streams[streamId].onClosed
-	// TODO: Check for errors in received headers
-	headers := ""
-	if includeHeaders {
-		sortedHeaderNames := make([]string, len(received.receivedHeaders))
-		i := 0
-		for name, _ := range received.receivedHeaders {
-			sortedHeaderNames[i] = name
-			i++
+	timeout := make(chan bool, 1)
+	go func() {
+		time.Sleep(time.Duration(timeoutInSeconds) * time.Second)
+		timeout <- true
+	}()
+	select {
+	case received := <-h2c.streams[streamId].onClosed:
+		// TODO: Check for errors in received headers
+		headers := ""
+		if includeHeaders {
+			sortedHeaderNames := make([]string, len(received.receivedHeaders))
+			i := 0
+			for name, _ := range received.receivedHeaders {
+				sortedHeaderNames[i] = name
+				i++
+			}
+			sort.Strings(sortedHeaderNames)
+			for _, name := range sortedHeaderNames {
+				headers += name + ": " + received.receivedHeaders[name] + "\n"
+			}
+			headers += "\n"
 		}
-		sort.Strings(sortedHeaderNames)
-		for _, name := range sortedHeaderNames {
-			headers += name + ": " + received.receivedHeaders[name] + "\n"
-		}
-		headers += "\n"
+		return headers + string(received.receivedData.Bytes()), nil
+	case <-timeout:
+		return "", errors.New("Timeout while waiting for response.")
 	}
-	return headers + string(received.receivedData.Bytes()), nil
 }
 
 func (h2c *Http2Client) isConnected() bool {

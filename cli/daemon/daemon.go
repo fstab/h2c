@@ -88,7 +88,18 @@ func executeConnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, err
 
 func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 	_, includeHeaders := cmd.Options["--include"]
-	return h2c.Get(cmd.Args[0], includeHeaders)
+	timeoutString, exists := cmd.Options["--timeout"]
+	var timeout int
+	var err error
+	if exists {
+		timeout, err = strconv.Atoi(timeoutString)
+		if err != nil {
+			return "", fmt.Errorf("%v: invalid timeout", timeoutString)
+		}
+	} else {
+		timeout = 10
+	}
+	return h2c.Get(cmd.Args[0], includeHeaders, timeout)
 }
 
 func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn, sock net.Listener) {
