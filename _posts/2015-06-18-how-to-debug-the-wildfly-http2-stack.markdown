@@ -45,7 +45,7 @@ Breakpoints
 -----------
 
 The [HTTP/2] protocol is implemented in `undertow-core-1.2.7.Final.jar`, which is included with the dependencies in the example project's `pom.xml` file.
-Any Java IDE should be able to open the Java sources corresponding to this dependency.
+Any Java IDE should be able to open the Java sources for this dependency and set breakpoints there.
 The parser for [HTTP/2 frames] can be found in package `io.undertow.protocols.http2`, the server code handling HTTP/2 communication is in `io.undertow.server.protocol.http2`.
 
 What's Next?
