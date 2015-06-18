@@ -36,7 +36,7 @@ java -jar target/undertow-http2-servlet-example.jar
 
 Just like in the [Hello, World!] post, the example service can be accessed on [https://localhost:8443/hello-world/api/hello-world].
 
-![Example Servlet in Google Chrome]({site.url}}{{site.baseurl}}/assets/2015-06-18-undertow-http2-servlet-example-in-browser.png)
+![Example Servlet in Google Chrome]({{site.url}}{{site.baseurl}}/assets/2015-06-18-undertow-http2-servlet-example-in-browser.png)
 
 The [HTTP/2] protocol is implemented in `undertow-core-1.2.7.Final.jar`, which is included with the dependencies in the example project's `pom.xml` file.
 Any Java IDE should be able to open the Java sources corresponding to this dependency.
