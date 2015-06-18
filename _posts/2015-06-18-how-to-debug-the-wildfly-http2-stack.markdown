@@ -38,6 +38,12 @@ Just like in the [Hello, World!] post, the example service can be accessed on [h
 
 ![Example Servlet in Google Chrome]({{site.url}}{{site.baseurl}}/assets/2015-06-18-undertow-http2-servlet-example-in-browser.png)
 
+In an [IDE], the example project's main class `de.consol.research.h2c.Http2Server` can also be run using the
+<img src="{{site.url}}{{site.baseurl}}/assets/2015-06-18-idea-play-button.png" alt="play" style="height: 26px;"/> button, without using [maven].
+
+Breakpoints
+-----------
+
 The [HTTP/2] protocol is implemented in `undertow-core-1.2.7.Final.jar`, which is included with the dependencies in the example project's `pom.xml` file.
 Any Java IDE should be able to open the Java sources corresponding to this dependency.
 The parser for [HTTP/2 frames] can be found in package `io.undertow.protocols.http2`, the server code handling HTTP/2 communication is in `io.undertow.server.protocol.http2`.
@@ -55,6 +61,8 @@ In the next posts, we will learn how [HTTP/2] streams are handled and mapped to 
 [Wildfly]: http://wildfly.org
 [undertow-http2-servlet-example]: https://github.com/fstab/http2-examples/tree/master/undertow-http2-servlet-example
 [undertow]: http://undertow.io
+[IDE]: https://www.jetbrains.com/idea
+[maven]: https://maven.apache.org
 [https://localhost:8443/hello-world/api/hello-world]: https://localhost:8443/hello-world/api/hello-world
 [HTTP/2]: https://http2.github.io
 [HTTP/2 frames]: https://httpwg.github.io/specs/rfc7540.html#FrameTypes
