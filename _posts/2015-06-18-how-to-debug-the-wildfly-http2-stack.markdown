@@ -38,7 +38,7 @@ Just like in the [Hello, World!] post, the example service can be accessed on [h
 
 ![Example Servlet in Google Chrome]({{site.url}}{{site.baseurl}}/assets/2015-06-18-undertow-http2-servlet-example-in-browser.png)
 
-In an [IDE], the example project's main class `de.consol.research.h2c.Http2Server` can also be run using the
+In an [IDE], the example project's main class `de.consol.labs.h2c.Http2Server` can also be run using the
 <img src="{{site.url}}{{site.baseurl}}/assets/2015-06-18-idea-play-button.png" alt="play" style="height: 26px;"/> button, without using [maven].
 
 Breakpoints
