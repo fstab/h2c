@@ -1,0 +1,206 @@
+---
+layout:   post
+title:    "HTTP/2 and Cookies"
+date:     2015-06-21 13:16:38
+comments: true
+---
+
+Originally, HTTP was designed as a [stateless protocol]. Each request is treated as
+an independent transaction that is unrelated to any previous request.
+In order to enable interactions with multiple requests, [session cookies] were
+introduced. A session cookie is a piece of data that is sent with each request,
+enabling the server to relate the request to an HTTP session.
+
+Session cookies are a workaround for introducing state into the otherwise stateless
+HTTP protocol. On a protocol level, HTTP/2 could make session cookies obsolete,
+because it supports long-running connections.
+However, as we have seen in the [Hello, World!] example, the HTTP session state
+does not use the underlying HTTP/2 connection state. Both states are maintained
+independent of each other.
+
+The reason is that HTTP sessions based on session cookies are so widely used in
+current HTTP applications. From the [HTTP/2 FAQ]:
+
+> If HTTP/2 had introduced a new HTTP session state mechanism, it would have meant
+> that the new protocol was incompatible with the existing Web.
+
+HTTP/2 still uses session cookies. This post shows how to implement them.
+
+TL;DR
+-----
+
+This post will
+
+  * show how headers are exchanged with HTTP/2.
+  * show how HTTP/2's Header Compression ([HPACK]) maintains a _connection state_
+    which is independent of the HTTP session state.
+  * provide the lessons learned when implementing cookie headers in the [h2c]
+    command line tool.
+
+HTTP/2 Header Frames
+--------------------
+
+In HTTP/1, each request and each response is a single message.
+In HTTP/2, each request and each response is represented by a _stream_ which is composed
+of multiple _frames_. The most important frame types are the [HEADERS] type, carrying
+the information that used to be in HTTP/1 message headers, and the [DATA] type,
+carrying the equivalent of HTTP/1 message bodies.
+Each frame has a stream ID to indicate which request or with response it belongs to.
+
+The following examples from the [HTTP/2 RFC] shows HTTP/1.1 requests and responses,
+with illustrations of equivalent HTTP/2 requests and responses.
+
+Request:
+
+{% highlight text %}
+GET /resource HTTP/1.1           HEADERS
+  Host: example.org          ==>     + END_STREAM
+  Accept: image/jpeg                 + END_HEADERS
+                                       :method = GET
+                                       :scheme = https
+                                       :path = /resource
+                                       host = example.org
+                                       accept = image/jpeg
+{% endhighlight %}
+
+Response:
+
+{% highlight text %}
+HTTP/1.1 200 OK                  HEADERS
+  Content-Type: image/jpeg   ==>     - END_STREAM
+  Content-Length: 123                + END_HEADERS
+                                       :status = 200
+  {binary data}                        content-type = image/jpeg
+                                       content-length = 123
+
+                                   DATA
+                                     + END_STREAM
+                                   {binary data}
+{% endhighlight %}
+
+HEADERS frames have a size limit. If the content becomes too big, it is split into an
+initial HEADERS frame followed by one or more CONTINUATION frames.
+
+{% highlight text %}
+GET /resource HTTP/1.1           HEADERS
+  Host: example.org          ==>     + END_STREAM
+  Accept: image/jpeg                 - END_HEADERS
+                                       :method = GET
+                                       :scheme = https
+                                       :path = /resource
+                                       host = example.org
+
+                                   CONTINUATION
+                                     + END_HEADERS
+                                       accept = image/jpeg
+{% endhighlight %}
+
+HTTP/2 Connection State
+-----------------------
+
+HTTP/1 headers are repetitive and verbose, causing unnecessary network traffic.
+For example, the [Chrome browser] typically includes a dozen headers in each request.
+Among other things, each request sent by the Chrome browser contains the same 133
+Bytes _User Agent_ header.
+
+HTTP/2 addresses this by using _HTTP Header Compression ([HPACK])_:
+
+  * Headers are represented in compressed binary format, not ASCII text.
+  * Once a server or a client receives a new header, it remembers the header in a
+    _dynamic table_. Instead of including the header again in the next request,
+    the request may include an index to the existing entry in the _dynamic table_.
+
+The _dynamic table_ maintained by the server and client can be seen as a
+_connection state_, which is altered by updating existing headers or inserting new
+headers.
+
+Implementing Cookies
+--------------------
+
+Using the Header Compression described above, cookies need to be sent only once to
+put them into the _dynamic table_, and subsequent requests include a reference to the
+entry in the _dynamic table_.
+
+In order to try this, I extended the [h2c] command line client from the [Hello, World!]
+example with an option `-i` to view the headers received, and with a `h2c set`
+command to set headers. The headers are referenced in the
+_dynamic table_ with each subsequent request, unless `h2c unset` is called.
+
+The [Hello, World!] example can now be run as follows:
+
+![Setting a cookie with h2c]( {{site.url}}{{site.baseurl}}/assets/2015-06-21-cookie.png)
+
+It took some attempts to get the implementation of the `h2c set` command right:
+
+### First Attempt: HEADERS Frame with Single Header
+
+The first attempt to implementing the `h2c set` command was to send out a HEADERS frame
+with the header provided in the command line, so that the server inserts this header
+into its _dynamic table_.
+
+However, it turned out that HEADER frames with only one header are malformed according
+to the HTTP/2 spec:
+
+> All HTTP/2 requests MUST include exactly one valid value for the :method :schema and
+> :path unless it is a CONNECT request. An HTTP request that omits mandatory
+> pseudo-header fields is malformed.
+
+If the current [Wildfly] 9 Beta version receives a HEADERS frame without a :method,
+it [logs a NullPointerException].
+
+### Second Attempt: Continuation
+
+The second attempt was to split the headers into a HEADERS frame which is sent out with
+the `h2c set` command, and a CONTINUATION frames which is sent with the next `h2c get`
+and provides the missing :method and other mandatory fields.
+
+This works well with the current [Wildfly] 9 Beta, but the HTTP/2 specification indicates
+that it actually shouldn't work:
+
+> All pseudo-header fields MUST appear in the header block before regular header fields.
+> Any request or response that contains a pseudo-header field that appears in a header
+> block after a regular header field MUST be treated as malformed
+
+The composed header includes the cookie before the :method, which is illegal.
+
+As a side note, some code comments in Wildfly's [Undertow] source code indicate that
+developers don't feel very confident about CONTINUATION frames:
+
+{% highlight java %}
+Http2Channel.FRAME_TYPE_CONTINUATION = 0x09; //hopefully this goes away
+{% endhighlight %}
+
+### Third Attempt: Caching the Header Client Side
+
+The trivial, but most robust implementation is not to send anything with the
+`h2c set` command, but to remember the headers on the client side and include
+them with the next request. This works, but it seems a bit boring, because
+it does not implement any fancy way of setting the header independently of the
+next request.
+
+What's Next
+-----------
+
+This post showed how session cookies are implemented in HTTP/2 in a way that is
+compatible with existing Web applications. In order to remain compatible with existing
+web application semantics, HTTP/2 did not change the way HTTP session are maintained.
+
+However, for some server-to-server APIs it might not be a requirement to be
+compatible with existing HTTP session semantics. For these APIs, it might be more
+natural to use HTTP/2 connections for implementing sessions, and not to revert to
+HTTP/1 compatible session cookies. Future posts will investigate how this can be
+achieved.
+
+[h2c]: https://github.com/fstab/h2c
+[Undertow]: http://undertow.io
+[stateless protocol]: https://en.wikipedia.org/wiki/Stateless_protocol
+[Hello, World!]: http://blog.http2client.net/2015/06/07/http2-hello-world.html
+[session cookies]: https://en.wikipedia.org/wiki/HTTP_cookie#Session_cookie
+[Chrome browser]: https://www.google.com/chrome/browser/desktop/
+[HTTP/2 FAQ]: https://http2.github.io/faq/#can-http2-make-cookies-or-other-headers-better
+[HTTP/2 RFC]: https://httpwg.github.io/specs/rfc7540.html#HttpSequence
+[HEADERS]: https://httpwg.github.io/specs/rfc7540.html#HEADERS
+[DATA]: https://httpwg.github.io/specs/rfc7540.html#DATA
+[HPACK]: https://httpwg.github.io/specs/rfc7541.html
+[logs a NullPointerException]: https://issues.jboss.org/browse/UNDERTOW-474
+[Wildfly]: http://wildfly.org
