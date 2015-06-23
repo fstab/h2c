@@ -6,27 +6,33 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/bradfitz/http2"
 	"github.com/bradfitz/http2/hpack"
+	"github.com/fstab/h2c/http2client/connection"
+	"github.com/fstab/h2c/http2client/frames"
 	"net"
 	"sort"
 	"time"
 )
 
 type Http2Client struct {
-	host              string
-	port              int
-	conn              net.Conn
-	streams           map[uint32]*stream // StreamID -> *stream
-	framer            *http2.Framer
-	headers           []hpack.HeaderField // filled with 'h2c set'
-	headerBlockBuffer bytes.Buffer
-	headerEncoder     *hpack.Encoder // encodes headers, maintains copy of server's dynamic table
-	err               error          // if != nil, the Http2Client becomes unusable
+	conn          *connection.Connection
+	streams       map[uint32]*stream  // StreamID -> *stream
+	customHeaders []hpack.HeaderField // filled with 'h2c set'
+	err           error               // if != nil, the Http2Client becomes unusable
+}
+
+func (h2c *Http2Client) initConnection(conn net.Conn, host string, port int) {
+	h2c.conn = connection.NewConnection(conn, host, port, false)
+	h2c.streams = make(map[uint32]*stream)
+	h2c.customHeaders = make([]hpack.HeaderField, 0)
+}
+
+func (h2c *Http2Client) isConnected() bool {
+	return h2c.conn != nil
 }
 
 type stream struct {
-	receivedHeaders map[string]string
+	receivedHeaders map[string]string // TODO: Does not allow multiple headers with same name
 	receivedData    bytes.Buffer
 	onClosed        chan *stream
 }
@@ -44,36 +50,29 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 		return "", h2c.err
 	}
 	if h2c.isConnected() {
-		return "", fmt.Errorf("Already connected to %v:%v.", h2c.host, h2c.port)
+		return "", fmt.Errorf("Already connected to %v:%v.", h2c.conn.Host(), h2c.conn.Port())
 	}
 	hostAndPort := fmt.Sprintf("%v:%v", host, port)
 	conn, err := tls.Dial("tcp", hostAndPort, &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:         []string{http2.NextProtoTLS},
+		NextProtos:         []string{"h2"},
 	})
 	if err != nil {
 		return "", fmt.Errorf("Failed to connect to %v: %v", hostAndPort, err.Error())
 	}
-	_, err = conn.Write([]byte(http2.ClientPreface))
+	_, err = conn.Write([]byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) // client preface
 	if err != nil {
 		return "", fmt.Errorf("Failed to write client preface to %v: %v", hostAndPort, err.Error())
 	}
-	framer := http2.NewFramer(conn, conn)
-	err = framer.WriteSettings()
+	h2c.initConnection(conn, host, port)
+	err = h2c.conn.Write(frames.NewSettingsFrame(0))
 	if err != nil {
 		return "", fmt.Errorf("Failed to write initial settings frame to %v: %v", hostAndPort, err.Error())
 	}
-	frame, err := framer.ReadFrame()
-	if err != nil || frame.Header().Type != http2.FrameSettings {
+	frame, err := h2c.conn.ReadNext()
+	if err != nil || frame.Type() != frames.SETTINGS_TYPE {
 		return "", fmt.Errorf("Failed to read initial settings frame from %v: %v", hostAndPort, err.Error())
 	}
-	h2c.conn = conn
-	h2c.framer = framer
-	h2c.host = host
-	h2c.port = port
-	h2c.streams = make(map[uint32]*stream)
-	h2c.headerEncoder = hpack.NewEncoder(&h2c.headerBlockBuffer)
-	h2c.headers = make([]hpack.HeaderField, 0)
 
 	go h2c.handleIncomingFrames()
 	return "", nil
@@ -81,50 +80,46 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 
 func (h2c *Http2Client) handleIncomingFrames() {
 	for {
-		frame, err := h2c.framer.ReadFrame()
+		frame, err := h2c.conn.ReadNext()
 		if err != nil {
 			h2c.die(fmt.Errorf("Failed to read next frame: %v", err.Error()))
 			return
 		}
-		if frame.Header().Type == http2.FrameHeaders {
-			headersFrame, ok := frame.(*http2.HeadersFrame)
+		if frame.Type() == frames.HEADERS_TYPE {
+			headersFrame, ok := frame.(*frames.HeadersFrame)
 			if !ok {
-				h2c.die(fmt.Errorf("ERROR: Incompatable version of github.com/bradfitz/http2"))
+				h2c.die(fmt.Errorf("ERROR: frames.ReadNext() returned frame with inconsisten type."))
 				return
 			}
-			s, exists := h2c.streams[headersFrame.StreamID]
+			s, exists := h2c.streams[headersFrame.StreamId]
 			if !exists {
-				h2c.streams[headersFrame.StreamID] = &stream{
+				h2c.streams[headersFrame.StreamId] = &stream{
 					receivedHeaders: make(map[string]string),
 				}
-				s = h2c.streams[headersFrame.StreamID]
+				s = h2c.streams[headersFrame.StreamId]
 			}
-			headerCallback := func(f hpack.HeaderField) {
-				s.receivedHeaders[f.Name] = f.Value
+			for _, header := range headersFrame.Headers {
+				s.receivedHeaders[header.Name] = header.Value
 			}
-			decoder := hpack.NewDecoder(4096, headerCallback)
-			blockFragment := headersFrame.HeaderBlockFragment()
-			decoder.Write(blockFragment)
-			// TODO: Handler continuations
+			// TODO: continuations
 			// TODO: error handling
-			decoder.Close()
-			if headersFrame.StreamEnded() && s.onClosed != nil {
+			if headersFrame.EndStream && s.onClosed != nil {
 				s.onClosed <- s
 			}
 		}
-		if frame.Header().Type == http2.FrameData {
-			dataFrame, ok := frame.(*http2.DataFrame)
+		if frame.Type() == frames.DATA_TYPE {
+			dataFrame, ok := frame.(*frames.DataFrame)
 			if !ok {
-				h2c.die(fmt.Errorf("ERROR: Incompatable version of github.com/bradfitz/http2"))
+				h2c.die(fmt.Errorf("ERROR: frames.ReadNext() returned frame with inconsisten type."))
 				return
 			}
-			s, exists := h2c.streams[dataFrame.StreamID]
+			s, exists := h2c.streams[dataFrame.StreamId]
 			if !exists {
-				h2c.die(fmt.Errorf("Received data for unknown stream %v", dataFrame.StreamID))
+				h2c.die(fmt.Errorf("Received data for unknown stream %v", dataFrame.StreamId))
 				return
 			}
-			s.receivedData.Write(dataFrame.Data())
-			if dataFrame.StreamEnded() && s.onClosed != nil {
+			s.receivedData.Write(dataFrame.Data)
+			if dataFrame.EndStream && s.onClosed != nil {
 				s.onClosed <- s
 			}
 		}
@@ -155,18 +150,18 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds i
 		//		receivedData:    bytes.Buffer,
 		onClosed: make(chan *stream),
 	}
-	blockFragment, err := h2c.makeGetBlockFragment(h2c.host, path)
-	if err != nil {
-		return "", fmt.Errorf("Failed to encode headers: %v", err.Error())
+	headers := []hpack.HeaderField{
+		hpack.HeaderField{Name: ":authority", Value: h2c.conn.Host()},
+		hpack.HeaderField{Name: ":method", Value: "GET"},
+		hpack.HeaderField{Name: ":path", Value: path},
+		hpack.HeaderField{Name: ":scheme", Value: "https"},
 	}
-	err = h2c.framer.WriteHeaders(http2.HeadersFrameParam{
-		StreamID:      streamId,
-		BlockFragment: blockFragment,
-		EndStream:     true,
-		EndHeaders:    true,
-	})
+	for _, header := range h2c.customHeaders {
+		headers = append(headers, header)
+	}
+	err := h2c.conn.Write(frames.NewHeadersFrame(streamId, headers))
 	if err != nil {
-		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.host, err.Error())
+		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
 	}
 	timeout := make(chan bool, 1)
 	go func() {
@@ -201,35 +196,8 @@ func (h2c *Http2Client) SetHeader(name, value string) (string, error) {
 	for name[len(name)-1] == ':' {
 		name = name[:len(name)-1]
 	}
-	h2c.headers = append(h2c.headers, hpack.HeaderField{Name: name, Value: value})
+	h2c.customHeaders = append(h2c.customHeaders, hpack.HeaderField{Name: name, Value: value})
 	return "", nil
-}
-
-func (h2c *Http2Client) isConnected() bool {
-	return h2c.conn != nil || h2c.framer != nil || h2c.host != "" || h2c.port != 0
-}
-
-func (h2c *Http2Client) makeGetBlockFragment(host, path string) ([]byte, error) {
-	var err error
-	defer h2c.headerBlockBuffer.Reset()
-	h2c.appendHeader(hpack.HeaderField{Name: ":authority", Value: host}, &err)
-	h2c.appendHeader(hpack.HeaderField{Name: ":method", Value: "GET"}, &err)
-	h2c.appendHeader(hpack.HeaderField{Name: ":path", Value: path}, &err)
-	h2c.appendHeader(hpack.HeaderField{Name: ":scheme", Value: "https"}, &err)
-	for _, field := range h2c.headers {
-		h2c.appendHeader(field, &err)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return h2c.headerBlockBuffer.Bytes(), nil
-}
-
-func (h2c *Http2Client) appendHeader(headerField hpack.HeaderField, err *error) {
-	if *err != nil {
-		return
-	}
-	*err = h2c.headerEncoder.WriteField(headerField)
 }
 
 func (h2c *Http2Client) die(err error) {
