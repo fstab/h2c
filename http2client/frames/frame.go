@@ -50,6 +50,25 @@ func encodeHeader(frameType Type, streamId uint32, length uint32, flags []Flag) 
 	return result.Bytes()
 }
 
+type FrameHeader struct {
+	Length     uint32
+	HeaderType Type
+	Flags      byte
+	StreamId   uint32
+}
+
+func DecodeHeader(data []byte) *FrameHeader {
+	length := append(make([]byte, 1), data[0:3]...)   // 4 Byte Big Endian
+	streamId := append(make([]byte, 0), data[5:9]...) // 4 Byte Big Endian
+	streamId[0] = streamId[0] & 0x7F                  // clear reserved bit
+	return &FrameHeader{
+		Length:     binary.BigEndian.Uint32(length),
+		HeaderType: Type(data[3]),
+		Flags:      data[4],
+		StreamId:   binary.BigEndian.Uint32(streamId),
+	}
+}
+
 func (flag Flag) isSet(flagsByte byte) bool {
 	return flagsByte&byte(flag) != 0
 }

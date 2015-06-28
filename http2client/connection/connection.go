@@ -1,7 +1,6 @@
 package connection
 
 import (
-	"encoding/binary"
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
 	"io"
@@ -42,24 +41,22 @@ func (c *Connection) Port() int {
 }
 
 func (c *Connection) ReadNext() (frames.Frame, error) {
-	header := make([]byte, 9) // Frame starts with a 9 Bytes header
-	_, err := io.ReadFull(c.conn, header)
+	headerData := make([]byte, 9) // Frame starts with a 9 Bytes header
+	_, err := io.ReadFull(c.conn, headerData)
 	if err != nil {
 		return nil, err
 	}
-	length := uint32(header[0])<<16 + uint32(header[1])<<8 + uint32(header[2])
-	header[5] = header[5] & 0x7F // clear reserved bit
-	streamId := binary.BigEndian.Uint32(header[5:])
-	payload := make([]byte, length)
+	header := frames.DecodeHeader(headerData)
+	payload := make([]byte, header.Length)
 	_, err = io.ReadFull(c.conn, payload)
 	if err != nil {
 		return nil, err
 	}
-	decodeFunc := frames.FindDecoder(frames.Type(header[3]))
+	decodeFunc := frames.FindDecoder(frames.Type(header.HeaderType))
 	if decodeFunc == nil {
-		return nil, fmt.Errorf("%v: Unknown frame type.", header[3])
+		return nil, fmt.Errorf("%v: Unknown frame type.", header.HeaderType)
 	}
-	frame, err := decodeFunc(header[4], streamId, payload, c.decodingContext)
+	frame, err := decodeFunc(header.Flags, header.StreamId, payload, c.decodingContext)
 	if c.dump != nil {
 		io.WriteString(c.dump, fmt.Sprintf("%v\n", frame.String()))
 	}
