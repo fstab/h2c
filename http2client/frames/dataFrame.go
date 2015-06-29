@@ -2,7 +2,6 @@ package frames
 
 import (
 	"bytes"
-	"fmt"
 )
 
 const (
@@ -25,11 +24,15 @@ func NewDataFrame(streamId uint32, data []byte, endStream bool) *DataFrame {
 }
 
 func DecodeDataFrame(flags byte, streamId uint32, framePayload []byte, context *DecodingContext) (Frame, error) {
-	endStream := flags&0x01 != 0
-	padded := flags&0x08 != 0
+	endStream := DATA_FLAG_END_STREAM.isSet(flags)
+	padded := DATA_FLAG_PADDED.isSet(flags)
 	payload := framePayload
+	var err error
 	if padded {
-		return nil, fmt.Errorf("Padded data frames not implemented yet.")
+		payload, err = stripPadding(payload)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return NewDataFrame(streamId, payload, endStream), nil
 }
@@ -52,8 +55,4 @@ func (f *DataFrame) Encode(context *EncodingContext) ([]byte, error) {
 	result.Write(encodeHeader(f.Type(), f.StreamId, length, f.flags()))
 	result.Write(f.Data)
 	return result.Bytes(), nil
-}
-
-func (f *DataFrame) String() string {
-	return fmt.Sprintf("DATA(%v)", f.StreamId)
 }

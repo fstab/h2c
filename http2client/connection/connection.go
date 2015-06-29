@@ -5,28 +5,23 @@ import (
 	"github.com/fstab/h2c/http2client/frames"
 	"io"
 	"net"
-	"os"
 )
 
 type Connection struct {
 	host            string
 	port            int
 	conn            net.Conn
-	dump            io.Writer
+	dump            bool
 	encodingContext *frames.EncodingContext
 	decodingContext *frames.DecodingContext
 }
 
 func NewConnection(conn net.Conn, host string, port int, dump bool) *Connection {
-	var writer io.Writer
-	if dump {
-		writer = os.Stdout
-	}
 	return &Connection{
 		host:            host,
 		port:            port,
 		conn:            conn,
-		dump:            writer,
+		dump:            dump,
 		encodingContext: frames.NewEncodingContext(),
 		decodingContext: frames.NewDecodingContext(),
 	}
@@ -57,15 +52,15 @@ func (c *Connection) ReadNext() (frames.Frame, error) {
 		return nil, fmt.Errorf("%v: Unknown frame type.", header.HeaderType)
 	}
 	frame, err := decodeFunc(header.Flags, header.StreamId, payload, c.decodingContext)
-	if c.dump != nil {
-		io.WriteString(c.dump, fmt.Sprintf("%v\n", frame.String()))
+	if c.dump {
+		frames.DumpIncoming(frame)
 	}
 	return frame, err
 }
 
 func (c *Connection) Write(frame frames.Frame) error {
-	if c.dump != nil {
-		io.WriteString(c.dump, fmt.Sprintf("%v\n", frame.String()))
+	if c.dump {
+		frames.DumpOutgoing(frame)
 	}
 	data, err := frame.Encode(c.encodingContext)
 	if err != nil {

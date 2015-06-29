@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"os"
 )
 
 type Setting uint16
@@ -21,17 +22,38 @@ const (
 	SETTINGS_FLAG_ACK Flag = 0x01
 )
 
+func (s Setting) String() string {
+	switch s {
+	case SETTINGS_HEADER_TABLE_SIZE:
+		return "SETTINGS_HEADER_TABLE_SIZE"
+	case SETTINGS_ENABLE_PUSH:
+		return "SETTINGS_ENABLE_PUSH"
+	case SETTINGS_MAX_CONCURRENT_STREAMS:
+		return "SETTINGS_MAX_CONCURRENT_STREAMS"
+	case SETTINGS_INITIAL_WINDOW_SIZE:
+		return "SETTINGS_INITIAL_WINDOW_SIZE"
+	case SETTINGS_MAX_FRAME_SIZE:
+		return "SETTINGS_MAX_FRAME_SIZE"
+	case SETTINGS_MAX_HEADER_LIST_SIZE:
+		return "SETTINGS_MAX_HEADER_LIST_SIZE"
+	default:
+		fmt.Fprintf(os.Stderr, "ERROR: Unknown setting %v", s)
+		os.Exit(-1)
+		return ""
+	}
+}
+
 type SettingsFrame struct {
-	streamId uint32
-	ack      bool
-	settings map[Setting]uint32
+	StreamId uint32
+	Ack      bool
+	Settings map[Setting]uint32
 }
 
 func NewSettingsFrame(streamId uint32) *SettingsFrame {
 	return &SettingsFrame{
-		streamId: streamId,
-		ack:      false,
-		settings: make(map[Setting]uint32),
+		StreamId: streamId,
+		Ack:      false,
+		Settings: make(map[Setting]uint32),
 	}
 }
 
@@ -40,14 +62,14 @@ func DecodeSettingsFrame(flags byte, streamId uint32, payload []byte, context *D
 		return nil, fmt.Errorf("Invalid SETTINGS frame.")
 	}
 	result := NewSettingsFrame(streamId)
-	result.ack = SETTINGS_FLAG_ACK.isSet(flags)
+	result.Ack = SETTINGS_FLAG_ACK.isSet(flags)
 	for i := 0; i < len(payload); i += 6 {
 		setting := Setting(binary.BigEndian.Uint16(payload[i : i+2]))
 		value := binary.BigEndian.Uint32(payload[i+2 : i+6])
 		if isUnknownSetting(setting) {
 			return nil, fmt.Errorf("Unknown setting in SETTINGS frame.")
 		}
-		result.settings[setting] = value
+		result.Settings[setting] = value
 	}
 	return result, nil
 }
@@ -67,7 +89,7 @@ func (f *SettingsFrame) Type() Type {
 
 func (f *SettingsFrame) flags() []Flag {
 	flags := make([]Flag, 0)
-	if f.ack {
+	if f.Ack {
 		flags = append(flags, SETTINGS_FLAG_ACK)
 	}
 	return flags
@@ -75,9 +97,9 @@ func (f *SettingsFrame) flags() []Flag {
 
 func (f *SettingsFrame) Encode(context *EncodingContext) ([]byte, error) {
 	var result bytes.Buffer
-	length := uint32(len(f.settings) * 6)
-	result.Write(encodeHeader(f.Type(), f.streamId, length, f.flags()))
-	for id, value := range f.settings {
+	length := uint32(len(f.Settings) * 6)
+	result.Write(encodeHeader(f.Type(), f.StreamId, length, f.flags()))
+	for id, value := range f.Settings {
 		idBytes := make([]byte, 2)
 		binary.BigEndian.PutUint16(idBytes, uint16(id))
 		result.Write(idBytes)
@@ -86,8 +108,4 @@ func (f *SettingsFrame) Encode(context *EncodingContext) ([]byte, error) {
 		result.Write(valueBytes)
 	}
 	return result.Bytes(), nil
-}
-
-func (f *SettingsFrame) String() string {
-	return fmt.Sprintf("SETTINGS(%v)", f.streamId)
 }

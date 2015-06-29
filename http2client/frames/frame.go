@@ -3,6 +3,7 @@ package frames
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 )
 
 type Type byte
@@ -17,7 +18,6 @@ const (
 type Frame interface {
 	Encode(*EncodingContext) ([]byte, error)
 	Type() Type
-	String() string
 }
 
 func FindDecoder(frameType Type) func(flags byte, streamId uint32, payload []byte, context *DecodingContext) (Frame, error) {
@@ -75,4 +75,13 @@ func (flag Flag) isSet(flagsByte byte) bool {
 
 func (flag Flag) set(flagsByte *byte) {
 	*flagsByte = *flagsByte | byte(flag)
+}
+
+func stripPadding(payload []byte) ([]byte, error) {
+	padLength := int(payload[0])
+	if len(payload) <= padLength {
+		// TODO: trigger connection error.
+		return nil, fmt.Errorf("Invalid HEADERS frame: padding >= payload.")
+	}
+	return payload[1 : len(payload)-padLength], nil
 }

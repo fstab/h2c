@@ -31,16 +31,33 @@ func NewHeadersFrame(streamId uint32, headers []hpack.HeaderField) *HeadersFrame
 	}
 }
 
+// must be called after stripPadding()
+func stripPriority(payload []byte) ([]byte, error) {
+	if len(payload) <= 5 {
+		// TODO: trigger connection error
+		return nil, fmt.Errorf("Invalid HEADERS frame: Priority flag set, but stream dependency missing.")
+	}
+	return payload[5:], nil
+}
+
 func DecodeHeadersFrame(flags byte, streamId uint32, payload []byte, context *DecodingContext) (Frame, error) {
 	endStream := HEADERS_FLAG_END_STREAM.isSet(flags)
 	endHeaders := HEADERS_FLAG_END_HEADERS.isSet(flags)
 	padded := HEADERS_FLAG_PADDED.isSet(flags)
 	priority := HEADERS_FLAG_PRIORITY.isSet(flags)
+	var err error
 	if padded {
-		return nil, fmt.Errorf("Padded header frames not implemented yet.")
+		payload, err = stripPadding(payload)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if priority {
-		return nil, fmt.Errorf("Priority headers not implemented yet.")
+		payload, err = stripPriority(payload) // TODO: Priority ignored.
+		printBytes("Payload with stripped priority", payload)
+		if err != nil {
+			return nil, err
+		}
 	}
 	headers, err := context.decoder.DecodeFull(payload)
 	if err != nil {
@@ -84,8 +101,4 @@ func (f *HeadersFrame) Encode(context *EncodingContext) ([]byte, error) {
 	result.Write(encodeHeader(f.Type(), f.StreamId, length, f.flags()))
 	result.Write(headerBlockFragment)
 	return result.Bytes(), nil
-}
-
-func (f *HeadersFrame) String() string {
-	return fmt.Sprintf("HEADERS(%v)", f.StreamId)
 }
