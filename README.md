@@ -1,11 +1,19 @@
-h2c - HTTP/2 client
------------------------
+h2c - A Simple Command-Line HTTP/2 Client
+-----------------------------------------
 
-`h2c` is a simple command line client for HTTP/2 servers.
+`h2c` is a simple command-line client for HTTP/2 servers.
 
 It is currently in a very early stage. The best way to learn about it is to read the blog posts on [http://blog.http2client.net](http://blog.http2client.net).
 
-The basic usage is as follows:
+Screenshots
+-----------
+
+![h2c commandline](doc/h2c-cmdline.png)
+
+![h2c dump](doc/h2c-dump.png)
+
+Basic Usage
+-----------
 
 ```bash
 h2c start &
