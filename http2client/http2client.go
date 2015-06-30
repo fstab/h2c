@@ -19,10 +19,11 @@ type Http2Client struct {
 	streams       map[uint32]*stream  // StreamID -> *stream
 	customHeaders []hpack.HeaderField // filled with 'h2c set'
 	err           error               // if != nil, the Http2Client becomes unusable
+	dump          bool                // h2c start --dump
 }
 
 func (h2c *Http2Client) initConnection(conn net.Conn, host string, port int) {
-	h2c.conn = connection.NewConnection(conn, host, port, false)
+	h2c.conn = connection.NewConnection(conn, host, port, h2c.dump)
 	h2c.streams = make(map[uint32]*stream)
 	h2c.customHeaders = make([]hpack.HeaderField, 0)
 }
@@ -41,8 +42,10 @@ func (s *stream) headerCallback(f hpack.HeaderField) {
 	s.receivedHeaders[f.Name] = f.Value
 }
 
-func New() *Http2Client {
-	return &Http2Client{}
+func New(dump bool) *Http2Client {
+	return &Http2Client{
+		dump: dump,
+	}
 }
 
 func (h2c *Http2Client) Connect(host string, port int) (string, error) {

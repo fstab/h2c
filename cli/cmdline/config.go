@@ -87,4 +87,11 @@ var options = []*option{
 		commands:    []string{"start", "get", "pid", "stop"},
 		hasParam:    false,
 	},
+	&option{
+		short:       "-d",
+		long:        "--dump",
+		description: "Dump traffic to console.",
+		commands:    []string{"start"},
+		hasParam:    false,
+	},
 }

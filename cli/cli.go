@@ -22,7 +22,8 @@ func Run() (string, error) {
 	}
 	switch cmd.Name {
 	case "start":
-		return "", startDaemon(ipc)
+		_, dump := cmd.Options["--dump"]
+		return "", startDaemon(ipc, dump)
 	default:
 		if !ipc.IsListening() {
 			if cmd.Name == "stop" {
@@ -40,7 +41,7 @@ func Run() (string, error) {
 	}
 }
 
-func startDaemon(ipc rpc.IpcManager) error {
+func startDaemon(ipc rpc.IpcManager, dump bool) error {
 	if ipc.IsListening() {
 		pidCmd, _ := rpc.NewCommand("pid", make([]string, 0), make(map[string]string))
 		res := sendCommand(pidCmd, ipc)
@@ -54,7 +55,7 @@ func startDaemon(ipc rpc.IpcManager) error {
 	if err != nil {
 		return err
 	}
-	return daemon.Run(sock)
+	return daemon.Run(sock, dump)
 }
 
 func sendCommand(cmd *rpc.Command, ipc rpc.IpcManager) *rpc.Result {

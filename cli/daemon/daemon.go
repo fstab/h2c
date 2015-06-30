@@ -20,10 +20,10 @@ import (
 // and uses the Http2Client to execute these commands.
 //
 // The socket will be closed when the h2c process is terminated.
-func Run(sock net.Listener) error {
+func Run(sock net.Listener, dump bool) error {
 	var conn net.Conn
 	var err error
-	var h2c = http2client.New()
+	var h2c = http2client.New(dump)
 	stopOnSigterm(sock)
 	for {
 		if conn, err = sock.Accept(); err != nil {
