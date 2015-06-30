@@ -203,6 +203,27 @@ func (h2c *Http2Client) SetHeader(name, value string) (string, error) {
 	return "", nil
 }
 
+func (h2c *Http2Client) UnsetHeader(nameValue []string) (string, error) {
+	if len(nameValue) != 1 && len(nameValue) != 2 {
+		return "", errors.New("Syntax error.")
+	}
+	remainingHeaders := make([]hpack.HeaderField, 0, len(h2c.customHeaders))
+	matches := func(field hpack.HeaderField) bool {
+		if len(nameValue) == 1 {
+			return field.Name == nameValue[0]
+		} else {
+			return field.Name == nameValue[0] && field.Value == nameValue[1]
+		}
+	}
+	for _, field := range h2c.customHeaders {
+		if !matches(field) {
+			remainingHeaders = append(remainingHeaders, field)
+		}
+	}
+	h2c.customHeaders = remainingHeaders
+	return "", nil
+}
+
 func (h2c *Http2Client) die(err error) {
 	// TODO: disconnect
 	if h2c.err == nil {

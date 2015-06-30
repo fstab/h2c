@@ -20,14 +20,14 @@ func Parse(args []string) (*rpc.Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(remainingArgs) != cmd.nArgs+1 {
+	if len(remainingArgs) < cmd.minArgs+1 || len(remainingArgs) > cmd.maxArgs+1 {
 		return nil, errors.New(usage(cmd))
 	}
 	if HELP_OPTION.IsSet(options) {
 		return nil, errors.New(usage(cmd))
 	}
 	cmdArgs := make([]string, 0)
-	if cmd.nArgs > 0 {
+	if len(remainingArgs) > 1 {
 		cmdArgs = remainingArgs[1:]
 		if !cmd.areArgsValid(cmdArgs) {
 			return nil, errors.New(usage(cmd))

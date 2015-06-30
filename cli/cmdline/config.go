@@ -7,22 +7,26 @@ import (
 type command struct {
 	name         string
 	description  string
-	nArgs        int
+	minArgs      int
+	maxArgs      int
 	areArgsValid func([]string) bool
 	usage        string
 }
 
 var (
 	START_COMMAND = &command{
-		name:        "start",
-		description: "Start the h2c process.\nThe h2c process must be started before any other command can be run.",
-		nArgs:       0,
-		usage:       StartCmd,
+		name: "start",
+		description: "Start the h2c process. The h2c process must be started before running any other\n" +
+			"command. To run h2c as a background process, run '" + StartCmd + "'.",
+		minArgs: 0,
+		maxArgs: 0,
+		usage:   "h2c start [options]",
 	}
 	CONNECT_COMMAND = &command{
 		name:        "connect",
 		description: "Connect to a server using https.",
-		nArgs:       1,
+		minArgs:     1,
+		maxArgs:     1,
 		areArgsValid: func(args []string) bool {
 			return regexp.MustCompile("^[^:]+(:[0-9]+)?$").MatchString(args[0])
 		},
@@ -31,7 +35,8 @@ var (
 	GET_COMMAND = &command{
 		name:        "get",
 		description: "Perform a GET request.",
-		nArgs:       1,
+		minArgs:     1,
+		maxArgs:     1,
 		areArgsValid: func(args []string) bool {
 			return true
 		},
@@ -39,23 +44,39 @@ var (
 	}
 	SET_COMMAND = &command{
 		name:        "set",
-		description: "Set a header.\nThe header will be included in any subsequent request, unless 'h2c unset' is called.",
-		nArgs:       2,
+		description: "Set a header. The header will be included in any subsequent request.",
+		minArgs:     2,
+		maxArgs:     2,
 		areArgsValid: func(args []string) bool {
 			return true
 		},
 		usage: "h2c set <header-name> <header-value>",
 	}
+	UNSET_COMMAND = &command{
+		name: "unset",
+		description: "Undo 'h2c set'. The header will no longer be included in subsequent requests.\n" +
+			"If <header-value> is omitted, all headers with <header-name> are removed.\n" +
+			"Otherwise, only the specific value is removed but other headers with the same\n" +
+			"name remain.",
+		minArgs: 1,
+		maxArgs: 2,
+		areArgsValid: func(args []string) bool {
+			return true
+		},
+		usage: "h2c unset <header-name> [<header-value>]",
+	}
 	PID_COMMAND = &command{
 		name:        "pid",
 		description: "Show the process id of the h2c process.",
-		nArgs:       0,
+		minArgs:     0,
+		maxArgs:     0,
 		usage:       "h2c pid",
 	}
 	STOP_COMMAND = &command{
 		name:        "stop",
 		description: "Stop the h2c process.",
-		nArgs:       0,
+		minArgs:     0,
+		maxArgs:     0,
 		usage:       "h2c stop",
 	}
 )
@@ -69,6 +90,7 @@ var commands = []*command{
 	CONNECT_COMMAND,
 	GET_COMMAND,
 	SET_COMMAND,
+	UNSET_COMMAND,
 	PID_COMMAND,
 	STOP_COMMAND,
 }
@@ -118,7 +140,7 @@ var (
 		short:       "-h",
 		long:        "--help",
 		description: "Show this help message.",
-		commands:    []*command{START_COMMAND, CONNECT_COMMAND, GET_COMMAND, SET_COMMAND, PID_COMMAND, STOP_COMMAND},
+		commands:    []*command{START_COMMAND, CONNECT_COMMAND, GET_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND},
 		hasParam:    false,
 	}
 	DUMP_OPTION = &option{

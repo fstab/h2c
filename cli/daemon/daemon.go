@@ -65,6 +65,8 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 		return executeGet(h2c, cmd)
 	case cmdline.SET_COMMAND.Name():
 		return h2c.SetHeader(cmd.Args[0], cmd.Args[1])
+	case cmdline.UNSET_COMMAND.Name():
+		return h2c.UnsetHeader(cmd.Args)
 	default:
 		return "", fmt.Errorf("%v: unknown command", cmd.Name)
 	}
