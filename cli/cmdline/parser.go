@@ -23,8 +23,7 @@ func Parse(args []string) (*rpc.Command, error) {
 	if len(remainingArgs) != cmd.nArgs+1 {
 		return nil, errors.New(usage(cmd))
 	}
-	_, help := options["--help"]
-	if help {
+	if HELP_OPTION.IsSet(options) {
 		return nil, errors.New(usage(cmd))
 	}
 	cmdArgs := make([]string, 0)
@@ -49,10 +48,10 @@ func parseOptions(args []string) ([]string, map[string]string, error) {
 				if !opt.isParamValid(args[i+1]) {
 					return nil, nil, syntaxError
 				}
-				foundOptions[opt.long] = args[i+1]
+				opt.Set(args[i+1], foundOptions)
 				args = append(args[:i], args[i+2:]...)
 			} else {
-				foundOptions[opt.long] = ""
+				opt.Set("", foundOptions)
 				args = append(args[:i], args[i+1:]...)
 			}
 		}
@@ -75,10 +74,11 @@ func globalUsage() string {
 }
 
 func usage(cmd *command) string {
-	result := "Usage: " + cmd.usage
+	result := cmd.description
+	result += "\nUsage: " + cmd.usage
 	availableOptions := make([]*option, 0)
 	for _, opt := range options {
-		if opt.supportsCommand(cmd.name) {
+		if opt.supportsCommand(cmd) {
 			availableOptions = append(availableOptions, opt)
 		}
 	}
@@ -112,9 +112,9 @@ func (opt *option) findIndex(argv []string) (int, bool) {
 	return -1, false
 }
 
-func (opt *option) supportsCommand(cmd string) bool {
+func (opt *option) supportsCommand(cmd *command) bool {
 	for _, c := range opt.commands {
-		if c == cmd {
+		if c.name == cmd.name {
 			return true
 		}
 	}

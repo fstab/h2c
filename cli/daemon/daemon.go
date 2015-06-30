@@ -4,6 +4,7 @@ package daemon
 import (
 	"bufio"
 	"fmt"
+	"github.com/fstab/h2c/cli/cmdline"
 	"github.com/fstab/h2c/cli/rpc"
 	"github.com/fstab/h2c/http2client"
 	"io"
@@ -56,13 +57,13 @@ func stopOnSigterm(sock net.Listener) {
 
 func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 	switch cmd.Name {
-	case "connect":
+	case cmdline.CONNECT_COMMAND.Name():
 		return executeConnect(h2c, cmd)
-	case "pid":
+	case cmdline.PID_COMMAND.Name():
 		return strconv.Itoa(os.Getpid()), nil
-	case "get":
+	case cmdline.GET_COMMAND.Name():
 		return executeGet(h2c, cmd)
-	case "set":
+	case cmdline.SET_COMMAND.Name():
 		return h2c.SetHeader(cmd.Args[0], cmd.Args[1])
 	default:
 		return "", fmt.Errorf("%v: unknown command", cmd.Name)
@@ -89,14 +90,13 @@ func executeConnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, err
 }
 
 func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
-	_, includeHeaders := cmd.Options["--include"]
-	timeoutString, exists := cmd.Options["--timeout"]
+	includeHeaders := cmdline.INCLUDE_OPTION.IsSet(cmd.Options)
 	var timeout int
 	var err error
-	if exists {
-		timeout, err = strconv.Atoi(timeoutString)
+	if cmdline.TIMEOUT_OPTION.IsSet(cmd.Options) {
+		timeout, err = strconv.Atoi(cmdline.TIMEOUT_OPTION.Get(cmd.Options))
 		if err != nil {
-			return "", fmt.Errorf("%v: invalid timeout", timeoutString)
+			return "", fmt.Errorf("%v: invalid timeout", cmdline.TIMEOUT_OPTION.Get(cmd.Options))
 		}
 	} else {
 		timeout = 10
@@ -113,7 +113,7 @@ func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Con
 		handleCommunicationError("Failed to decode command: %v", err.Error())
 		return
 	}
-	if cmd.Name == "stop" {
+	if cmd.Name == cmdline.STOP_COMMAND.Name() {
 		writeResult(conn, "", nil)
 		stop(sock)
 	} else {

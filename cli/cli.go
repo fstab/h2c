@@ -20,13 +20,11 @@ func Run() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	switch cmd.Name {
-	case "start":
-		_, dump := cmd.Options["--dump"]
-		return "", startDaemon(ipc, dump)
-	default:
+	if cmdline.START_COMMAND.Name() == cmd.Name {
+		return "", startDaemon(ipc, cmdline.DUMP_OPTION.IsSet(cmd.Options))
+	} else {
 		if !ipc.IsListening() {
-			if cmd.Name == "stop" {
+			if cmdline.STOP_COMMAND.Name() == cmd.Name {
 				return "", fmt.Errorf("h2c is not running.")
 			} else {
 				return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", cmdline.StartCmd)
@@ -43,7 +41,7 @@ func Run() (string, error) {
 
 func startDaemon(ipc rpc.IpcManager, dump bool) error {
 	if ipc.IsListening() {
-		pidCmd, _ := rpc.NewCommand("pid", make([]string, 0), make(map[string]string))
+		pidCmd, _ := rpc.NewCommand(cmdline.PID_COMMAND.Name(), make([]string, 0), make(map[string]string))
 		res := sendCommand(pidCmd, ipc)
 		if res.Error != nil || !isNumber(res.Message) {
 			return fmt.Errorf(ipc.InUseErrorMessage())
@@ -79,7 +77,7 @@ func sendCommand(cmd *rpc.Command, ipc rpc.IpcManager) *rpc.Result {
 	responseBuffer := bytes.NewBuffer(nil)
 	_, err = io.Copy(responseBuffer, conn)
 	if err != nil {
-		if cmd.Name == "stop" && len(responseBuffer.Bytes()) > 0 {
+		if cmd.Name == cmdline.STOP_COMMAND.Name() && len(responseBuffer.Bytes()) > 0 {
 			// Ignore. This seems to happen on windows when the connection is closed because of the 'stop' command.
 		} else {
 			return communicationError(err)
