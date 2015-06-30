@@ -8,9 +8,9 @@ It is currently in a very early stage. The best way to learn about it is to read
 Screenshots
 -----------
 
-![h2c commandline](doc/h2c-cmdline.png)
-
 ![h2c dump](doc/h2c-dump.png)
+
+![h2c commandline](doc/h2c-cmdline.png)
 
 Basic Usage
 -----------
