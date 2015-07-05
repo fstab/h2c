@@ -120,10 +120,11 @@ func executePost(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error)
 	} else {
 		timeout = 10
 	}
-	if !cmdline.DATA_OPTION.IsSet(cmd.Options) {
-		return "", fmt.Errorf("Data not found.")
+	var data []byte
+	if cmdline.DATA_OPTION.IsSet(cmd.Options) {
+		data = []byte(cmdline.DATA_OPTION.Get(cmd.Options))
 	}
-	return h2c.Post(cmd.Args[0], []byte(cmdline.DATA_OPTION.Get(cmd.Options)), includeHeaders, timeout)
+	return h2c.Post(cmd.Args[0], data, includeHeaders, timeout)
 }
 
 func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn, sock net.Listener) {
