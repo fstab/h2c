@@ -9,6 +9,7 @@ import (
 	"github.com/fstab/h2c/cli/daemon"
 	"github.com/fstab/h2c/cli/rpc"
 	"io"
+	"io/ioutil"
 	"os"
 	"regexp"
 )
@@ -17,6 +18,10 @@ import (
 func Run() (string, error) {
 	ipc := rpc.NewIpcManager()
 	cmd, err := cmdline.Parse(os.Args[1:])
+	if err != nil {
+		return "", err
+	}
+	cmd, err = applySpecialConventions(cmd)
 	if err != nil {
 		return "", err
 	}
@@ -37,6 +42,44 @@ func Run() (string, error) {
 			return res.Message, nil
 		}
 	}
+}
+
+func applySpecialConventions(cmd *rpc.Command) (*rpc.Command, error) {
+	var err error
+	if cmd.Name == cmdline.POST_COMMAND.Name() {
+		if cmdline.DATA_OPTION.IsSet(cmd.Options) && cmdline.FILE_OPTION.IsSet(cmd.Options) {
+			return nil, fmt.Errorf("Syntax error: --data and --file cannot be used together.")
+		} else if cmdline.FILE_OPTION.IsSet(cmd.Options) {
+			cmd, err = mapFile2Data(cmd)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return cmd, nil
+}
+
+func mapFile2Data(cmd *rpc.Command) (*rpc.Command, error) {
+	var (
+		filename string
+		data     []byte
+		err      error
+	)
+	filename = cmdline.FILE_OPTION.Get(cmd.Options)
+	if filename == "-" {
+		data, err = ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read data from stdin: %v", err.Error())
+		}
+	} else {
+		data, err = ioutil.ReadFile(filename)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read %v: %v", filename, err.Error())
+		}
+	}
+	cmdline.FILE_OPTION.Delete(cmd.Options)
+	cmdline.DATA_OPTION.Set(string(data), cmd.Options)
+	return cmd, nil
 }
 
 func startDaemon(ipc rpc.IpcManager, dump bool) error {

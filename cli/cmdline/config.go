@@ -129,6 +129,10 @@ func (o *option) Set(val string, m map[string]string) {
 	m[o.long] = val
 }
 
+func (o *option) Delete(m map[string]string) {
+	delete(m, o.long)
+}
+
 var (
 	INCLUDE_OPTION = &option{
 		short:       "-i",
@@ -167,6 +171,16 @@ var (
 			return true
 		},
 	}
+	FILE_OPTION = &option{
+		short:       "-f",
+		long:        "--file",
+		description: "Post the content of file. Use '--file -' to read from stdin.",
+		commands:    []*command{POST_COMMAND},
+		hasParam:    true,
+		isParamValid: func(param string) bool {
+			return true
+		},
+	}
 	HELP_OPTION = &option{
 		short:       "-h",
 		long:        "--help",
@@ -190,4 +204,5 @@ var options = []*option{
 	HELP_OPTION,
 	DUMP_OPTION,
 	DATA_OPTION,
+	FILE_OPTION,
 }
