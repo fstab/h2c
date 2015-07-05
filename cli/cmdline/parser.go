@@ -9,14 +9,15 @@ import (
 var syntaxError = errors.New("Syntax error. Run 'h2c --help' for help.")
 
 func Parse(args []string) (*rpc.Command, error) {
-	remainingArgs, options, err := parseOptions(args)
+	if len(args) == 1 && (args[0] == HELP_OPTION.short || args[0] == HELP_OPTION.long) {
+		// h2c --help
+		return nil, errors.New(globalUsage())
+	}
+	cmd, err := findCommand(args)
 	if err != nil {
 		return nil, err
 	}
-	if len(remainingArgs) == 0 {
-		return nil, errors.New(globalUsage())
-	}
-	cmd, err := findCommand(remainingArgs)
+	remainingArgs, options, err := parseOptions(args, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -36,23 +37,25 @@ func Parse(args []string) (*rpc.Command, error) {
 	return rpc.NewCommand(cmd.name, cmdArgs, options)
 }
 
-func parseOptions(args []string) ([]string, map[string]string, error) {
+func parseOptions(args []string, cmd *command) ([]string, map[string]string, error) {
 	foundOptions := make(map[string]string)
 	for _, opt := range options {
-		i, found := opt.findIndex(args)
-		if found {
-			if opt.hasParam {
-				if len(args) <= i+1 {
-					return nil, nil, syntaxError
+		if opt.supportsCommand(cmd) {
+			i, found := opt.findIndex(args)
+			if found {
+				if opt.hasParam {
+					if len(args) <= i+1 {
+						return nil, nil, syntaxError
+					}
+					if !opt.isParamValid(args[i+1]) {
+						return nil, nil, syntaxError
+					}
+					opt.Set(args[i+1], foundOptions)
+					args = append(args[:i], args[i+2:]...)
+				} else {
+					opt.Set("", foundOptions)
+					args = append(args[:i], args[i+1:]...)
 				}
-				if !opt.isParamValid(args[i+1]) {
-					return nil, nil, syntaxError
-				}
-				opt.Set(args[i+1], foundOptions)
-				args = append(args[:i], args[i+2:]...)
-			} else {
-				opt.Set("", foundOptions)
-				args = append(args[:i], args[i+1:]...)
 			}
 		}
 	}
@@ -98,6 +101,18 @@ func findCommand(args []string) (*command, error) {
 	for _, cmd := range commands {
 		if args[0] == cmd.name {
 			return cmd, nil
+		}
+	}
+	for _, opt := range options {
+		if args[0] == opt.short || args[0] == opt.long {
+			if opt.hasParam {
+				if len(args) < 2 {
+					return nil, syntaxError
+				} else {
+					return findCommand(args[2:])
+				}
+			}
+			return findCommand(args[1:])
 		}
 	}
 	return nil, errors.New(args[0] + ": Unknown command. Run 'h2c --help' for help.")

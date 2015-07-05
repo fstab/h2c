@@ -32,6 +32,30 @@ func TestEmpty(t *testing.T) {
 	assertError(cmd, err, t)
 }
 
+func TestDump(t *testing.T) {
+	cmd, err := Parse([]string{"start", "-d"})
+	expectedCmd := &rpc.Command{
+		Name: "start",
+		Args: make([]string, 0),
+		Options: map[string]string{
+			"--dump": "",
+		},
+	}
+	assertSuccess(cmd, expectedCmd, err, t)
+}
+
+func TestData(t *testing.T) {
+	cmd, err := Parse([]string{"post", "-d", "some data", "some path"})
+	expectedCmd := &rpc.Command{
+		Name: "post",
+		Args: []string{"some path"},
+		Options: map[string]string{
+			"--data": "some data",
+		},
+	}
+	assertSuccess(cmd, expectedCmd, err, t)
+}
+
 func assertSuccess(actual, expected *rpc.Command, err error, t *testing.T) {
 	if err != nil {
 		t.Error("Unexpected error: ", err.Error())

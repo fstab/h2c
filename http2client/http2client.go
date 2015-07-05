@@ -9,8 +9,10 @@ import (
 	"github.com/bradfitz/http2/hpack"
 	"github.com/fstab/h2c/http2client/connection"
 	"github.com/fstab/h2c/http2client/frames"
+	"go.googlesource.com/go/src/strings"
 	"net"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -35,6 +37,7 @@ func (h2c *Http2Client) isConnected() bool {
 type stream struct {
 	receivedHeaders map[string]string // TODO: Does not allow multiple headers with same name
 	receivedData    bytes.Buffer
+	err             error // RST_STREAM received
 	onClosed        chan *stream
 }
 
@@ -126,6 +129,22 @@ func (h2c *Http2Client) handleIncomingFrames() {
 				s.onClosed <- s
 			}
 		}
+		if frame.Type() == frames.RST_STREAM_TYPE {
+			rstStreamFrame, ok := frame.(*frames.RstStreamFrame)
+			if !ok {
+				h2c.die(fmt.Errorf("ERROR: frames.ReadNext() returned frame with inconsisten type."))
+				return
+			}
+			s, exists := h2c.streams[rstStreamFrame.StreamId]
+			if !exists {
+				h2c.die(fmt.Errorf("FATAL: Server sent RST_STREAM for unknown stream %v.", rstStreamFrame.StreamId))
+				return
+			}
+			s.err = fmt.Errorf("ERROR: Server sent RST_STREAM with error code %v.", rstStreamFrame.ErrorCode.String())
+			if s.onClosed != nil {
+				s.onClosed <- s
+			}
+		}
 	}
 }
 
@@ -141,6 +160,31 @@ func (h2c *Http2Client) nextAvailableStreamId() uint32 {
 }
 
 func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds int) (string, error) {
+	return h2c.doRequest("GET", path, nil, includeHeaders, timeoutInSeconds)
+}
+
+func (h2c *Http2Client) Post(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
+	return h2c.doRequest("POST", path, data, includeHeaders, timeoutInSeconds)
+}
+
+func makeHeaders(authority, method, path, scheme string, customHeaders []hpack.HeaderField, data []byte) []hpack.HeaderField {
+	headers := []hpack.HeaderField{
+		hpack.HeaderField{Name: ":authority", Value: authority},
+		hpack.HeaderField{Name: ":method", Value: method},
+		hpack.HeaderField{Name: ":path", Value: path},
+		hpack.HeaderField{Name: ":scheme", Value: scheme},
+	}
+	headers = append(headers, customHeaders...)
+	if data != nil {
+		headers = append(headers, hpack.HeaderField{
+			Name:  "content-length",
+			Value: strconv.Itoa(len(data)),
+		})
+	}
+	return headers
+}
+
+func (h2c *Http2Client) doRequest(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
 	}
@@ -150,21 +194,21 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds i
 	streamId := h2c.nextAvailableStreamId()
 	h2c.streams[streamId] = &stream{
 		receivedHeaders: make(map[string]string),
-		//		receivedData:    bytes.Buffer,
-		onClosed: make(chan *stream),
+		onClosed:        make(chan *stream),
 	}
-	headers := []hpack.HeaderField{
-		hpack.HeaderField{Name: ":authority", Value: h2c.conn.Host()},
-		hpack.HeaderField{Name: ":method", Value: "GET"},
-		hpack.HeaderField{Name: ":path", Value: path},
-		hpack.HeaderField{Name: ":scheme", Value: "https"},
-	}
-	for _, header := range h2c.customHeaders {
-		headers = append(headers, header)
-	}
-	err := h2c.conn.Write(frames.NewHeadersFrame(streamId, headers))
+	headers := makeHeaders(h2c.conn.Host(), method, path, "http2", h2c.customHeaders, data)
+	headersFrame := frames.NewHeadersFrame(streamId, headers)
+	headersFrame.EndStream = data == nil
+	err := h2c.conn.Write(headersFrame)
 	if err != nil {
 		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
+	}
+	if data != nil {
+		dataFrame := frames.NewDataFrame(streamId, data, true)
+		err = h2c.conn.Write(dataFrame)
+		if err != nil {
+			return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
+		}
 	}
 	timeout := make(chan bool, 1)
 	go func() {
@@ -173,6 +217,9 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds i
 	}()
 	select {
 	case received := <-h2c.streams[streamId].onClosed:
+		if received.err != nil {
+			return "", received.err
+		}
 		// TODO: Check for errors in received headers
 		headers := ""
 		if includeHeaders {
@@ -196,11 +243,19 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds i
 }
 
 func (h2c *Http2Client) SetHeader(name, value string) (string, error) {
+	h2c.customHeaders = append(h2c.customHeaders, hpack.HeaderField{
+		Name:  normalizeHeaderName(name),
+		Value: value,
+	})
+	return "", nil
+}
+
+// "Content-Type:" -> "content-type"
+func normalizeHeaderName(name string) string {
 	for name[len(name)-1] == ':' {
 		name = name[:len(name)-1]
 	}
-	h2c.customHeaders = append(h2c.customHeaders, hpack.HeaderField{Name: name, Value: value})
-	return "", nil
+	return strings.ToLower(name)
 }
 
 func (h2c *Http2Client) UnsetHeader(nameValue []string) (string, error) {
@@ -210,9 +265,9 @@ func (h2c *Http2Client) UnsetHeader(nameValue []string) (string, error) {
 	remainingHeaders := make([]hpack.HeaderField, 0, len(h2c.customHeaders))
 	matches := func(field hpack.HeaderField) bool {
 		if len(nameValue) == 1 {
-			return field.Name == nameValue[0]
+			return field.Name == normalizeHeaderName(nameValue[0])
 		} else {
-			return field.Name == nameValue[0] && field.Value == nameValue[1]
+			return field.Name == normalizeHeaderName(nameValue[0]) && field.Value == nameValue[1]
 		}
 	}
 	for _, field := range h2c.customHeaders {

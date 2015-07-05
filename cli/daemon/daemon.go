@@ -63,6 +63,8 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 		return strconv.Itoa(os.Getpid()), nil
 	case cmdline.GET_COMMAND.Name():
 		return executeGet(h2c, cmd)
+	case cmdline.POST_COMMAND.Name():
+		return executePost(h2c, cmd)
 	case cmdline.SET_COMMAND.Name():
 		return h2c.SetHeader(cmd.Args[0], cmd.Args[1])
 	case cmdline.UNSET_COMMAND.Name():
@@ -104,6 +106,24 @@ func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) 
 		timeout = 10
 	}
 	return h2c.Get(cmd.Args[0], includeHeaders, timeout)
+}
+
+func executePost(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	includeHeaders := cmdline.INCLUDE_OPTION.IsSet(cmd.Options)
+	var timeout int
+	var err error
+	if cmdline.TIMEOUT_OPTION.IsSet(cmd.Options) {
+		timeout, err = strconv.Atoi(cmdline.TIMEOUT_OPTION.Get(cmd.Options))
+		if err != nil {
+			return "", fmt.Errorf("%v: invalid timeout", cmdline.TIMEOUT_OPTION.Get(cmd.Options))
+		}
+	} else {
+		timeout = 10
+	}
+	if !cmdline.DATA_OPTION.IsSet(cmd.Options) {
+		return "", fmt.Errorf("Data not found.")
+	}
+	return h2c.Post(cmd.Args[0], []byte(cmdline.DATA_OPTION.Get(cmd.Options)), includeHeaders, timeout)
 }
 
 func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn, sock net.Listener) {

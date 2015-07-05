@@ -42,6 +42,16 @@ var (
 		},
 		usage: "h2c get [options] <path>",
 	}
+	POST_COMMAND = &command{
+		name:        "post",
+		description: "Perform a POST request.",
+		minArgs:     1,
+		maxArgs:     1,
+		areArgsValid: func(args []string) bool {
+			return true
+		},
+		usage: "h2c post [options] <path>",
+	}
 	SET_COMMAND = &command{
 		name:        "set",
 		description: "Set a header. The header will be included in any subsequent request.",
@@ -89,6 +99,7 @@ var commands = []*command{
 	START_COMMAND,
 	CONNECT_COMMAND,
 	GET_COMMAND,
+	POST_COMMAND,
 	SET_COMMAND,
 	UNSET_COMMAND,
 	PID_COMMAND,
@@ -123,24 +134,44 @@ var (
 		short:       "-i",
 		long:        "--include",
 		description: "Show response headers in the output.",
-		commands:    []*command{GET_COMMAND},
+		commands:    []*command{GET_COMMAND, POST_COMMAND},
 		hasParam:    false,
 	}
 	TIMEOUT_OPTION = &option{
 		short:       "-t",
 		long:        "--timeout",
 		description: "Timeout in seconds while waiting for response.",
-		commands:    []*command{GET_COMMAND},
+		commands:    []*command{GET_COMMAND, POST_COMMAND},
 		hasParam:    true,
 		isParamValid: func(param string) bool {
 			return regexp.MustCompile("^[0-9]+$").MatchString(param)
+		},
+	}
+	CONTENT_TYPE_OPTION = &option{
+		short:       "-c",
+		long:        "--content-type",
+		description: "Value of the Content-Type header.",
+		commands:    []*command{POST_COMMAND},
+		hasParam:    true,
+		isParamValid: func(param string) bool {
+			return true
+		},
+	}
+	DATA_OPTION = &option{
+		short:       "-d",
+		long:        "--data",
+		description: "The data to be sent. May not be used when --file is present.",
+		commands:    []*command{POST_COMMAND},
+		hasParam:    true,
+		isParamValid: func(param string) bool {
+			return true
 		},
 	}
 	HELP_OPTION = &option{
 		short:       "-h",
 		long:        "--help",
 		description: "Show this help message.",
-		commands:    []*command{START_COMMAND, CONNECT_COMMAND, GET_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND},
+		commands:    []*command{START_COMMAND, CONNECT_COMMAND, GET_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND},
 		hasParam:    false,
 	}
 	DUMP_OPTION = &option{
@@ -155,6 +186,8 @@ var (
 var options = []*option{
 	INCLUDE_OPTION,
 	TIMEOUT_OPTION,
+	CONTENT_TYPE_OPTION,
 	HELP_OPTION,
 	DUMP_OPTION,
+	DATA_OPTION,
 }
