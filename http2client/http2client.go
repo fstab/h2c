@@ -79,9 +79,21 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 	if err != nil || frame.Type() != frames.SETTINGS_TYPE {
 		return "", fmt.Errorf("Failed to read initial settings frame from %v: %v", hostAndPort, err.Error())
 	}
-
+	h2c.applySettings(frame)
 	go h2c.handleIncomingFrames()
 	return "", nil
+}
+
+func (h2c *Http2Client) applySettings(frame frames.Frame) {
+	settingsFrame, ok := frame.(*frames.SettingsFrame)
+	if !ok {
+		h2c.die(fmt.Errorf("ERROR: Trying to apply SETTINGS frame, but frame type is not SettingsFrame."))
+		return
+	}
+	if frames.SETTINGS_MAX_FRAME_SIZE.IsSet(settingsFrame) {
+		h2c.conn.SetServerFrameSize(frames.SETTINGS_MAX_FRAME_SIZE.Get(settingsFrame))
+	}
+	// TODO: Implement other settings, like HEADER_TABLE_SIZE.
 }
 
 func (h2c *Http2Client) handleIncomingFrames() {
@@ -90,6 +102,9 @@ func (h2c *Http2Client) handleIncomingFrames() {
 		if err != nil {
 			h2c.die(fmt.Errorf("Failed to read next frame: %v", err.Error()))
 			return
+		}
+		if frame.Type() == frames.SETTINGS_TYPE {
+			h2c.applySettings(frame)
 		}
 		if frame.Type() == frames.HEADERS_TYPE {
 			headersFrame, ok := frame.(*frames.HeadersFrame)
@@ -145,6 +160,14 @@ func (h2c *Http2Client) handleIncomingFrames() {
 				s.onClosed <- s
 			}
 		}
+		if frame.Type() == frames.GOAWAY_TYPE {
+			goAwayFrame, ok := frame.(*frames.GoAwayFrame)
+			if !ok {
+				h2c.die(fmt.Errorf("ERROR: frames.ReadNext() returned frame with inconsisten type."))
+				return
+			}
+			h2c.die(fmt.Errorf("Connection closed: Server sent GOAWAY with error code %v", goAwayFrame.ErrorCode.String()))
+		}
 	}
 }
 
@@ -184,6 +207,30 @@ func makeHeaders(authority, method, path, scheme string, customHeaders []hpack.H
 	return headers
 }
 
+func min(a, b uint32) uint32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (h2c *Http2Client) sendDataFrames(data []byte, streamId uint32) error {
+	chunkSize := h2c.conn.ServerFrameSize()
+	nChunksSent := uint32(0)
+	total := uint32(len(data))
+	for nChunksSent*chunkSize < total {
+		nextChunk := data[nChunksSent*chunkSize : min((nChunksSent+1)*chunkSize, total)]
+		nChunksSent = nChunksSent + 1
+		isLast := nChunksSent*chunkSize >= total
+		dataFrame := frames.NewDataFrame(streamId, nextChunk, isLast)
+		err := h2c.conn.Write(dataFrame)
+		if err != nil {
+			return fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
+		}
+	}
+	return nil
+}
+
 func (h2c *Http2Client) doRequest(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
@@ -204,10 +251,9 @@ func (h2c *Http2Client) doRequest(method string, path string, data []byte, inclu
 		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
 	}
 	if data != nil {
-		dataFrame := frames.NewDataFrame(streamId, data, true)
-		err = h2c.conn.Write(dataFrame)
+		err = h2c.sendDataFrames(data, streamId)
 		if err != nil {
-			return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
+			return "", err
 		}
 	}
 	timeout := make(chan bool, 1)

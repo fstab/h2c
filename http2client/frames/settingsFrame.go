@@ -43,6 +43,16 @@ func (s Setting) String() string {
 	}
 }
 
+func (s Setting) IsSet(f *SettingsFrame) bool {
+	_, ok := f.Settings[s]
+	return ok
+}
+
+func (s Setting) Get(f *SettingsFrame) uint32 {
+	val, _ := f.Settings[s]
+	return val
+}
+
 type SettingsFrame struct {
 	StreamId uint32
 	Ack      bool

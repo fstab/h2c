@@ -12,6 +12,7 @@ type Connection struct {
 	port            int
 	conn            net.Conn
 	dump            bool
+	serverFrameSize uint32
 	encodingContext *frames.EncodingContext
 	decodingContext *frames.DecodingContext
 }
@@ -22,6 +23,7 @@ func NewConnection(conn net.Conn, host string, port int, dump bool) *Connection 
 		port:            port,
 		conn:            conn,
 		dump:            dump,
+		serverFrameSize: 2 << 13, // Minimum size that must be supported by all server implementations.
 		encodingContext: frames.NewEncodingContext(),
 		decodingContext: frames.NewDecodingContext(),
 	}
@@ -33,6 +35,14 @@ func (c *Connection) Host() string {
 
 func (c *Connection) Port() int {
 	return c.port
+}
+
+func (c *Connection) ServerFrameSize() uint32 {
+	return c.serverFrameSize
+}
+
+func (c *Connection) SetServerFrameSize(size uint32) {
+	c.serverFrameSize = size
 }
 
 func (c *Connection) ReadNext() (frames.Frame, error) {
