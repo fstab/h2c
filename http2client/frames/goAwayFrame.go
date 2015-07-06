@@ -45,3 +45,7 @@ func (f *GoAwayFrame) Encode(context *EncodingContext) ([]byte, error) {
 	binary.BigEndian.PutUint32(payload[4:8], uint32(f.ErrorCode))
 	return payload, nil
 }
+
+func (f *GoAwayFrame) GetStreamId() uint32 {
+	return f.StreamId
+}

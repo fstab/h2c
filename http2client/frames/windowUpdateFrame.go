@@ -41,3 +41,7 @@ func (f *WindowUpdateFrame) Encode(context *EncodingContext) ([]byte, error) {
 	binary.BigEndian.PutUint32(payload, uint32(f.WindowSizeIncrement))
 	return payload, nil
 }
+
+func (f *WindowUpdateFrame) GetStreamId() uint32 {
+	return f.StreamId
+}

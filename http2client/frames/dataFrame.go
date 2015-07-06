@@ -56,3 +56,7 @@ func (f *DataFrame) Encode(context *EncodingContext) ([]byte, error) {
 	result.Write(f.Data)
 	return result.Bytes(), nil
 }
+
+func (f *DataFrame) GetStreamId() uint32 {
+	return f.StreamId
+}

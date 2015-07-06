@@ -21,6 +21,7 @@ const (
 type Frame interface {
 	Encode(*EncodingContext) ([]byte, error)
 	Type() Type
+	GetStreamId() uint32
 }
 
 func FindDecoder(frameType Type) func(flags byte, streamId uint32, payload []byte, context *DecodingContext) (Frame, error) {

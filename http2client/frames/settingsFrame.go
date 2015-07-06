@@ -119,3 +119,7 @@ func (f *SettingsFrame) Encode(context *EncodingContext) ([]byte, error) {
 	}
 	return result.Bytes(), nil
 }
+
+func (f *SettingsFrame) GetStreamId() uint32 {
+	return f.StreamId
+}

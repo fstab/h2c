@@ -102,3 +102,7 @@ func (f *HeadersFrame) Encode(context *EncodingContext) ([]byte, error) {
 	result.Write(headerBlockFragment)
 	return result.Bytes(), nil
 }
+
+func (f *HeadersFrame) GetStreamId() uint32 {
+	return f.StreamId
+}

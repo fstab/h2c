@@ -33,3 +33,7 @@ func (f *RstStreamFrame) Encode(context *EncodingContext) ([]byte, error) {
 	binary.BigEndian.PutUint32(result, uint32(f.ErrorCode))
 	return result, nil
 }
+
+func (f *RstStreamFrame) GetStreamId() uint32 {
+	return f.StreamId
+}
