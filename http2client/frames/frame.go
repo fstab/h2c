@@ -14,6 +14,7 @@ const (
 	HEADERS_TYPE    Type = 0x01
 	RST_STREAM_TYPE Type = 0x03
 	SETTINGS_TYPE   Type = 0x04
+	GOAWAY_TYPE     Type = 0x07
 )
 
 type Frame interface {
@@ -31,6 +32,8 @@ func FindDecoder(frameType Type) func(flags byte, streamId uint32, payload []byt
 		return DecodeRstStreamFrame
 	case SETTINGS_TYPE:
 		return DecodeSettingsFrame
+	case GOAWAY_TYPE:
+		return DecodeGoAwayFrame
 	default:
 		return nil
 	}

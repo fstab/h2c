@@ -58,10 +58,17 @@ func dump(prefix string, frame Frame) {
 	case *RstStreamFrame:
 		frameTypeColor.Printf("RST_STREAM")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
-		keyColor.Printf("    Error Code:")
+		keyColor.Printf("    Error code:")
+		valueColor.Printf(" %v\n", f.ErrorCode.String())
+	case *GoAwayFrame:
+		frameTypeColor.Printf("GOAWAY")
+		streamIdColor.Printf("(%v)\n", f.StreamId)
+		keyColor.Printf("    Last stream id:")
+		valueColor.Printf(" %v\n", f.LastStreamId)
+		keyColor.Printf("    Error code:")
 		valueColor.Printf(" %v\n", f.ErrorCode.String())
 	default:
-		fmt.Printf("UNKNOWN (NOT IMPLEMENTED) FRAME TYPE %v", frame.Type())
+		frameTypeColor.Printf("UNKNOWN (NOT IMPLEMENTED) FRAME TYPE %v\n", frame.Type())
 	}
 	fmt.Println()
 }
