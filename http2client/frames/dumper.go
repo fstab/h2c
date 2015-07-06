@@ -67,6 +67,11 @@ func dump(prefix string, frame Frame) {
 		valueColor.Printf(" %v\n", f.LastStreamId)
 		keyColor.Printf("    Error code:")
 		valueColor.Printf(" %v\n", f.ErrorCode.String())
+	case *WindowUpdateFrame:
+		frameTypeColor.Printf("WINDOW_UPDATE")
+		streamIdColor.Printf("(%v)\n", f.StreamId)
+		keyColor.Printf("    Window size increment:")
+		valueColor.Printf(" %v\n", f.WindowSizeIncrement)
 	default:
 		frameTypeColor.Printf("UNKNOWN (NOT IMPLEMENTED) FRAME TYPE %v\n", frame.Type())
 	}

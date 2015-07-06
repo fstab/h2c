@@ -10,11 +10,12 @@ type Type byte
 type Flag byte
 
 const (
-	DATA_TYPE       Type = 0x00
-	HEADERS_TYPE    Type = 0x01
-	RST_STREAM_TYPE Type = 0x03
-	SETTINGS_TYPE   Type = 0x04
-	GOAWAY_TYPE     Type = 0x07
+	DATA_TYPE          Type = 0x00
+	HEADERS_TYPE       Type = 0x01
+	RST_STREAM_TYPE    Type = 0x03
+	SETTINGS_TYPE      Type = 0x04
+	GOAWAY_TYPE        Type = 0x07
+	WINDOW_UPDATE_TYPE Type = 0x08
 )
 
 type Frame interface {
@@ -34,6 +35,8 @@ func FindDecoder(frameType Type) func(flags byte, streamId uint32, payload []byt
 		return DecodeSettingsFrame
 	case GOAWAY_TYPE:
 		return DecodeGoAwayFrame
+	case WINDOW_UPDATE_TYPE:
+		return DecodeWindowUpdateFrame
 	default:
 		return nil
 	}

@@ -40,7 +40,8 @@ func (f *GoAwayFrame) Type() Type {
 }
 
 func (f *GoAwayFrame) Encode(context *EncodingContext) ([]byte, error) {
-	result := make([]byte, 4)
-	binary.BigEndian.PutUint32(result, uint32(f.ErrorCode))
-	return result, nil
+	payload := make([]byte, 8)
+	binary.BigEndian.PutUint32(payload[0:4], f.LastStreamId)
+	binary.BigEndian.PutUint32(payload[4:8], uint32(f.ErrorCode))
+	return payload, nil
 }
