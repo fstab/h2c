@@ -45,6 +45,15 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 	return "", nil
 }
 
+func (h2c *Http2Client) Disconnect() (string, error) {
+	if h2c.isConnected() {
+		// TODO: Send goaway to server.
+		h2c.conn.Quit()
+		h2c.conn = nil
+	}
+	return "", nil
+}
+
 func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	return h2c.doRequest("GET", path, nil, includeHeaders, timeoutInSeconds)
 }

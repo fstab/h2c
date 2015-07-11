@@ -12,14 +12,17 @@ import (
 
 // The Connection is thread safe, because its members are independent of each other and each of the members is thread safe.
 type Connection struct {
-	in       chan frames.Frame
-	out      chan frames.Frame
-	quit     chan bool
-	writer   *writer
-	reader   *reader
-	settings *settings
-	info     *info
-	streams  map[uint32]*Stream // StreamID -> *stream
+	in              chan frames.Frame
+	out             chan frames.Frame
+	quit            chan bool
+	settings        *settings
+	info            *info
+	streams         map[uint32]*Stream // StreamID -> *stream
+	conn            net.Conn
+	dump            bool
+	disconnect      bool
+	encodingContext *frames.EncodingContext
+	decodingContext *frames.DecodingContext
 }
 
 type info struct {
@@ -30,18 +33,6 @@ type info struct {
 type settings struct {
 	serverFrameSize                uint32
 	initialWindowSizeForNewStreams uint32
-}
-
-type writer struct {
-	out             io.Writer
-	dump            bool
-	encodingContext *frames.EncodingContext
-}
-
-type reader struct {
-	in              io.Reader
-	dump            bool
-	decodingContext *frames.DecodingContext
 }
 
 func New(host string, port int, dump bool) (*Connection, error) {
@@ -57,10 +48,15 @@ func New(host string, port int, dump bool) (*Connection, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to write client preface to %v: %v", hostAndPort, err.Error())
 	}
-	result := newConnection(conn, host, port, dump)
-	result.run()
-	result.out <- frames.NewSettingsFrame(0)
-	return result, nil
+	c := newConnection(conn, host, port, dump)
+	go c.runFrameHandlerLoop()
+	go c.runIncomingFrameReader()
+	c.out <- frames.NewSettingsFrame(0)
+	return c, nil
+}
+
+func (c *Connection) Quit() {
+	c.quit <- true
 }
 
 func newConnection(conn net.Conn, host string, port int, dump bool) *Connection {
@@ -68,54 +64,51 @@ func newConnection(conn net.Conn, host string, port int, dump bool) *Connection 
 		in:   make(chan frames.Frame),
 		out:  make(chan frames.Frame),
 		quit: make(chan bool),
-		writer: &writer{
-			out:             conn,
-			dump:            dump,
-			encodingContext: frames.NewEncodingContext(),
-		},
 		info: &info{
 			host: host,
 			port: port,
-		},
-		reader: &reader{
-			in:              conn,
-			dump:            dump,
-			decodingContext: frames.NewDecodingContext(),
 		},
 		settings: &settings{
 			serverFrameSize:                2 << 13,   // Minimum size that must be supported by all server implementations.
 			initialWindowSizeForNewStreams: 2<<15 - 1, // Initial flow-control window size for new streams is 65,535 octets.
 		},
-		streams: make(map[uint32]*Stream),
+		streams:         make(map[uint32]*Stream),
+		disconnect:      false,
+		conn:            conn,
+		dump:            dump,
+		encodingContext: frames.NewEncodingContext(),
+		decodingContext: frames.NewDecodingContext(),
 	}
 }
 
-func (c *Connection) run() {
-	running := true
-	go func() {
-		// This makes sure that all frames are handled sequentially in a single thread.
-		for {
-			select {
-			case incomingFrame := <-c.in:
-				c.handleIncomingFrame(incomingFrame)
-			case outgoingFrame := <-c.out:
-				c.handleOutgoingFrame(outgoingFrame)
-			case <-c.quit:
-				running = false
-				return
-			}
+// This makes sure that all frames are handled sequentially in a single thread.
+func (c *Connection) runFrameHandlerLoop() {
+	for {
+		select {
+		case incomingFrame := <-c.in:
+			c.handleIncomingFrame(incomingFrame)
+		case outgoingFrame := <-c.out:
+			c.handleOutgoingFrame(outgoingFrame)
+		case <-c.quit:
+			c.disconnect = true
+			c.conn.Close()
+			return
 		}
-	}()
-	go func() {
-		// read frames from network socket and provide them to c.in channel
-		for running {
-			frame, err := c.reader.readNextFrame()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error while reading next frame: %v", err.Error()) // TODO: Error handling
-			}
-			c.in <- frame
+	}
+}
+
+// read frames from network socket and provide them to c.in channel
+func (c *Connection) runIncomingFrameReader() {
+	for {
+		frame, err := c.readNextFrame()
+		if c.disconnect {
+			return
 		}
-	}()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error while reading next frame: %v", err.Error()) // TODO: Error handling
+		}
+		c.in <- frame
+	}
 }
 
 func (c *Connection) handleIncomingFrame(frame frames.Frame) {
@@ -179,16 +172,16 @@ func (s *settings) apply(frame *frames.SettingsFrame) {
 }
 
 func (c *Connection) handleOutgoingFrame(frame frames.Frame) {
-	data, err := frame.Encode(c.writer.encodingContext)
+	data, err := frame.Encode(c.encodingContext)
 	if err != nil {
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Failed to write frame: %v", err.Error())
 		c.quit <- true
 	}
-	if c.writer.dump {
+	if c.dump {
 		frames.DumpOutgoing(frame)
 	}
-	_, err = c.writer.out.Write(data)
+	_, err = c.conn.Write(data)
 	if err != nil {
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Failed to write frame: %v", err.Error())
@@ -259,15 +252,15 @@ func (c *Connection) Port() int {
 	return c.info.port
 }
 
-func (r *reader) readNextFrame() (frames.Frame, error) {
+func (c *Connection) readNextFrame() (frames.Frame, error) {
 	headerData := make([]byte, 9) // Frame starts with a 9 Bytes header
-	_, err := io.ReadFull(r.in, headerData)
+	_, err := io.ReadFull(c.conn, headerData)
 	if err != nil {
 		return nil, err
 	}
 	header := frames.DecodeHeader(headerData)
 	payload := make([]byte, header.Length)
-	_, err = io.ReadFull(r.in, payload)
+	_, err = io.ReadFull(c.conn, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -275,8 +268,8 @@ func (r *reader) readNextFrame() (frames.Frame, error) {
 	if decodeFunc == nil {
 		return nil, fmt.Errorf("%v: Unknown frame type.", header.HeaderType)
 	}
-	frame, err := decodeFunc(header.Flags, header.StreamId, payload, r.decodingContext)
-	if r.dump {
+	frame, err := decodeFunc(header.Flags, header.StreamId, payload, c.decodingContext)
+	if c.dump {
 		frames.DumpIncoming(frame)
 	}
 	return frame, err

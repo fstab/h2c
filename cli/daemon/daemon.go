@@ -59,6 +59,8 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 	switch cmd.Name {
 	case cmdline.CONNECT_COMMAND.Name():
 		return executeConnect(h2c, cmd)
+	case cmdline.DISCONNECT_COMMAND.Name():
+		return executeDisconnect(h2c, cmd)
 	case cmdline.PID_COMMAND.Name():
 		return strconv.Itoa(os.Getpid()), nil
 	case cmdline.GET_COMMAND.Name():
@@ -91,6 +93,10 @@ func executeConnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, err
 		return "", fmt.Errorf("%v: Invalid port", hostAndPort[1])
 	}
 	return h2c.Connect(host, port)
+}
+
+func executeDisconnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	return h2c.Disconnect()
 }
 
 func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {

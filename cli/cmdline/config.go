@@ -32,6 +32,13 @@ var (
 		},
 		usage: "h2c connect [options] <host>:<port>",
 	}
+	DISCONNECT_COMMAND = &command{
+		name:        "disconnect",
+		description: "Disconnect from server.",
+		minArgs:     0,
+		maxArgs:     0,
+		usage:       "h2c disconnect",
+	}
 	GET_COMMAND = &command{
 		name:        "get",
 		description: "Perform a GET request.",
@@ -98,6 +105,7 @@ func (c *command) Name() string {
 var commands = []*command{
 	START_COMMAND,
 	CONNECT_COMMAND,
+	DISCONNECT_COMMAND,
 	GET_COMMAND,
 	POST_COMMAND,
 	SET_COMMAND,
@@ -185,7 +193,7 @@ var (
 		short:       "-h",
 		long:        "--help",
 		description: "Show this help message.",
-		commands:    []*command{START_COMMAND, CONNECT_COMMAND, GET_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND},
+		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND},
 		hasParam:    false,
 	}
 	DUMP_OPTION = &option{
