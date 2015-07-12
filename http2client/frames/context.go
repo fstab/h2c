@@ -8,7 +8,6 @@ import (
 type EncodingContext struct {
 	headerBlockBuffer bytes.Buffer
 	encoder           *hpack.Encoder
-	// TODO: Frame size, ...
 }
 
 type DecodingContext struct {

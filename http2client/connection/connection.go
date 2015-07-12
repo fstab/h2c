@@ -10,17 +10,16 @@ import (
 	"os"
 )
 
-// The Connection is thread safe, because its members are independent of each other and each of the members is thread safe.
 type Connection struct {
 	in              chan frames.Frame
 	out             chan frames.Frame
-	quit            chan bool
-	settings        *settings
+	shutdown        chan bool
 	info            *info
+	settings        *settings
 	streams         map[uint32]*Stream // StreamID -> *stream
 	conn            net.Conn
 	dump            bool
-	disconnect      bool
+	isShutdown      bool
 	encodingContext *frames.EncodingContext
 	decodingContext *frames.DecodingContext
 }
@@ -35,7 +34,7 @@ type settings struct {
 	initialWindowSizeForNewStreams uint32
 }
 
-func New(host string, port int, dump bool) (*Connection, error) {
+func Start(host string, port int, dump bool) (*Connection, error) {
 	hostAndPort := fmt.Sprintf("%v:%v", host, port)
 	conn, err := tls.Dial("tcp", hostAndPort, &tls.Config{
 		InsecureSkipVerify: true,
@@ -55,15 +54,15 @@ func New(host string, port int, dump bool) (*Connection, error) {
 	return c, nil
 }
 
-func (c *Connection) Quit() {
-	c.quit <- true
+func (c *Connection) Shutdown() {
+	c.shutdown <- true
 }
 
 func newConnection(conn net.Conn, host string, port int, dump bool) *Connection {
 	return &Connection{
-		in:   make(chan frames.Frame),
-		out:  make(chan frames.Frame),
-		quit: make(chan bool),
+		in:       make(chan frames.Frame),
+		out:      make(chan frames.Frame),
+		shutdown: make(chan bool),
 		info: &info{
 			host: host,
 			port: port,
@@ -73,7 +72,7 @@ func newConnection(conn net.Conn, host string, port int, dump bool) *Connection 
 			initialWindowSizeForNewStreams: 2<<15 - 1, // Initial flow-control window size for new streams is 65,535 octets.
 		},
 		streams:         make(map[uint32]*Stream),
-		disconnect:      false,
+		isShutdown:      false,
 		conn:            conn,
 		dump:            dump,
 		encodingContext: frames.NewEncodingContext(),
@@ -81,7 +80,7 @@ func newConnection(conn net.Conn, host string, port int, dump bool) *Connection 
 	}
 }
 
-// This makes sure that all frames are handled sequentially in a single thread.
+// Frame processing loop. This makes sure that all frames are handled sequentially in a single thread.
 func (c *Connection) runFrameHandlerLoop() {
 	for {
 		select {
@@ -89,19 +88,19 @@ func (c *Connection) runFrameHandlerLoop() {
 			c.handleIncomingFrame(incomingFrame)
 		case outgoingFrame := <-c.out:
 			c.handleOutgoingFrame(outgoingFrame)
-		case <-c.quit:
-			c.disconnect = true
+		case <-c.shutdown:
+			c.isShutdown = true
 			c.conn.Close()
 			return
 		}
 	}
 }
 
-// read frames from network socket and provide them to c.in channel
+// Read frames from network socket and provide them to c.in channel
 func (c *Connection) runIncomingFrameReader() {
 	for {
 		frame, err := c.readNextFrame()
-		if c.disconnect {
+		if c.isShutdown {
 			return
 		}
 		if err != nil {
@@ -148,7 +147,7 @@ func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 	case *frames.GoAwayFrame:
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Connection closed: Server sent GOAWAY with error code %v", frame.ErrorCode.String())
-		c.quit <- true
+		c.shutdown <- true
 	default:
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Received unknown frame type %v", frame.Type())
@@ -176,7 +175,7 @@ func (c *Connection) handleOutgoingFrame(frame frames.Frame) {
 	if err != nil {
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Failed to write frame: %v", err.Error())
-		c.quit <- true
+		c.shutdown <- true
 	}
 	if c.dump {
 		frames.DumpOutgoing(frame)
@@ -185,7 +184,7 @@ func (c *Connection) handleOutgoingFrame(frame frames.Frame) {
 	if err != nil {
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Failed to write frame: %v", err.Error())
-		c.quit <- true
+		c.shutdown <- true
 	}
 }
 

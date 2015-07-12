@@ -20,10 +20,6 @@ type Http2Client struct {
 	dump          bool                // h2c start --dump
 }
 
-func (h2c *Http2Client) isConnected() bool {
-	return h2c.conn != nil
-}
-
 func New(dump bool) *Http2Client {
 	return &Http2Client{
 		dump: dump,
@@ -37,7 +33,7 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 	if h2c.isConnected() {
 		return "", fmt.Errorf("Already connected to %v:%v.", h2c.conn.Host(), h2c.conn.Port())
 	}
-	conn, err := connection.New(host, port, h2c.dump)
+	conn, err := connection.Start(host, port, h2c.dump)
 	if err != nil {
 		return "", err
 	}
@@ -45,10 +41,14 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 	return "", nil
 }
 
+func (h2c *Http2Client) isConnected() bool {
+	return h2c.conn != nil
+}
+
 func (h2c *Http2Client) Disconnect() (string, error) {
 	if h2c.isConnected() {
 		// TODO: Send goaway to server.
-		h2c.conn.Quit()
+		h2c.conn.Shutdown()
 		h2c.conn = nil
 	}
 	return "", nil
@@ -60,48 +60,6 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds i
 
 func (h2c *Http2Client) Post(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	return h2c.doRequest("POST", path, data, includeHeaders, timeoutInSeconds)
-}
-
-func makeHeaders(authority, method, path, scheme string, customHeaders []hpack.HeaderField, data []byte) []hpack.HeaderField {
-	headers := []hpack.HeaderField{
-		hpack.HeaderField{Name: ":authority", Value: authority},
-		hpack.HeaderField{Name: ":method", Value: method},
-		hpack.HeaderField{Name: ":path", Value: path},
-		hpack.HeaderField{Name: ":scheme", Value: scheme},
-	}
-	headers = append(headers, customHeaders...)
-	if data != nil {
-		headers = append(headers, hpack.HeaderField{
-			Name:  "content-length",
-			Value: strconv.Itoa(len(data)),
-		})
-	}
-	return headers
-}
-
-func min(a, b uint32) uint32 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func (h2c *Http2Client) sendDataFrames(data []byte, stream *connection.Stream) error {
-	// chunkSize := uint32(len(data)) // use this to provoke GOAWAY frame with FRAME_SIZE_ERROR
-	chunkSize := h2c.conn.ServerFrameSize() // TODO: Query chunk size with each iteration -> allow changes during loop
-	nChunksSent := uint32(0)
-	total := uint32(len(data))
-	for nChunksSent*chunkSize < total {
-		nextChunk := data[nChunksSent*chunkSize : min((nChunksSent+1)*chunkSize, total)]
-		nChunksSent = nChunksSent + 1
-		isLast := nChunksSent*chunkSize >= total
-		dataFrame := frames.NewDataFrame(stream.StreamId(), nextChunk, isLast)
-		err := stream.Write(dataFrame)
-		if err != nil {
-			return fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
-		}
-	}
-	return nil
 }
 
 func (h2c *Http2Client) doRequest(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
@@ -150,6 +108,48 @@ func (h2c *Http2Client) doRequest(method string, path string, data []byte, inclu
 		responseHeaders += "\n"
 	}
 	return responseHeaders + string(stream.ReceivedData()), nil
+}
+
+func makeHeaders(authority, method, path, scheme string, customHeaders []hpack.HeaderField, data []byte) []hpack.HeaderField {
+	headers := []hpack.HeaderField{
+		hpack.HeaderField{Name: ":authority", Value: authority},
+		hpack.HeaderField{Name: ":method", Value: method},
+		hpack.HeaderField{Name: ":path", Value: path},
+		hpack.HeaderField{Name: ":scheme", Value: scheme},
+	}
+	headers = append(headers, customHeaders...)
+	if data != nil {
+		headers = append(headers, hpack.HeaderField{
+			Name:  "content-length",
+			Value: strconv.Itoa(len(data)),
+		})
+	}
+	return headers
+}
+
+func min(a, b uint32) uint32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (h2c *Http2Client) sendDataFrames(data []byte, stream *connection.Stream) error {
+	// chunkSize := uint32(len(data)) // use this to provoke GOAWAY frame with FRAME_SIZE_ERROR
+	chunkSize := h2c.conn.ServerFrameSize() // TODO: Query chunk size with each iteration -> allow changes during loop
+	nChunksSent := uint32(0)
+	total := uint32(len(data))
+	for nChunksSent*chunkSize < total {
+		nextChunk := data[nChunksSent*chunkSize : min((nChunksSent+1)*chunkSize, total)]
+		nChunksSent = nChunksSent + 1
+		isLast := nChunksSent*chunkSize >= total
+		dataFrame := frames.NewDataFrame(stream.StreamId(), nextChunk, isLast)
+		err := stream.Write(dataFrame)
+		if err != nil {
+			return fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
+		}
+	}
+	return nil
 }
 
 func (h2c *Http2Client) SetHeader(name, value string) (string, error) {
