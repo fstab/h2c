@@ -11,17 +11,18 @@ import (
 )
 
 type Connection struct {
-	in              chan frames.Frame
-	out             chan *writeFrameRequest
-	shutdown        chan bool
-	info            *info
-	settings        *settings
-	streams         map[uint32]*Stream // StreamID -> *stream
-	conn            net.Conn
-	dump            bool
-	isShutdown      bool
-	encodingContext *frames.EncodingContext
-	decodingContext *frames.DecodingContext
+	in                             chan frames.Frame
+	out                            chan *writeFrameRequest
+	shutdown                       chan bool
+	info                           *info
+	settings                       *settings
+	streams                        map[uint32]*Stream // StreamID -> *stream
+	conn                           net.Conn
+	dump                           bool
+	isShutdown                     bool
+	encodingContext                *frames.EncodingContext
+	decodingContext                *frames.DecodingContext
+	remainingFlowControlWindowSize int64
 }
 
 type info struct {
@@ -85,12 +86,13 @@ func newConnection(conn net.Conn, host string, port int, dump bool) *Connection 
 			serverFrameSize:                2 << 13,   // Minimum size that must be supported by all server implementations.
 			initialWindowSizeForNewStreams: 2<<15 - 1, // Initial flow-control window size for new streams is 65,535 octets.
 		},
-		streams:         make(map[uint32]*Stream),
-		isShutdown:      false,
-		conn:            conn,
-		dump:            dump,
-		encodingContext: frames.NewEncodingContext(),
-		decodingContext: frames.NewDecodingContext(),
+		streams:                        make(map[uint32]*Stream),
+		isShutdown:                     false,
+		conn:                           conn,
+		dump:                           dump,
+		encodingContext:                frames.NewEncodingContext(),
+		decodingContext:                frames.NewDecodingContext(),
+		remainingFlowControlWindowSize: 2<<15 - 1,
 	}
 }
 
@@ -127,7 +129,7 @@ func (c *Connection) runIncomingFrameReader() {
 func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 	switch frame := frame.(type) {
 	case *frames.SettingsFrame:
-		c.settings.apply(frame)
+		c.settings.handleSettingsFrame(frame)
 	case *frames.HeadersFrame:
 		stream := c.getOrCreateStream(frame.GetStreamId())
 		stream.addReceivedHeaders(frame.Headers...)
@@ -157,7 +159,7 @@ func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 		stream.setError(fmt.Errorf("ERROR: Server sent RST_STREAM with error code %v.", frame.ErrorCode.String()))
 		stream.endStream()
 	case *frames.WindowUpdateFrame:
-		// TODO: implement flow control
+		c.handleWindowUpdateFrame(frame)
 	case *frames.GoAwayFrame:
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Connection closed: Server sent GOAWAY with error code %v", frame.ErrorCode.String())
@@ -168,7 +170,7 @@ func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 	}
 }
 
-func (s *settings) apply(frame *frames.SettingsFrame) {
+func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
 	if frames.SETTINGS_MAX_FRAME_SIZE.IsSet(frame) {
 		s.serverFrameSize = (frames.SETTINGS_MAX_FRAME_SIZE.Get(frame))
 	}
@@ -184,19 +186,60 @@ func (s *settings) apply(frame *frames.SettingsFrame) {
 	// TODO: Implement other settings, like HEADER_TABLE_SIZE.
 }
 
+func (c *Connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
+	if frame.StreamId == 0 {
+		c.remainingFlowControlWindowSize += int64(frame.WindowSizeIncrement)
+	} else {
+		stream, exists := c.streams[frame.GetStreamId()]
+		if exists {
+			stream.remainingFlowControlWindowSize += int64(frame.WindowSizeIncrement)
+		}
+	}
+	c.processPendingDataFrames()
+}
+
 func (c *Connection) handleOutgoingFrame(req *writeFrameRequest) {
-	data, err := req.frame.Encode(c.encodingContext)
+	_, isDataFrame := req.frame.(*frames.DataFrame)
+	if isDataFrame {
+		// This is called through stream.Write() so we know that the stream with that id exists.
+		c.streams[req.frame.GetStreamId()].scheduleDataFrameWrite(req)
+		c.processPendingDataFrames()
+	} else {
+		c.writeImmediately(req)
+	}
+}
+
+func (c *Connection) writeImmediately(req *writeFrameRequest) {
+	encodedFrame, err := req.frame.Encode(c.encodingContext)
 	if err != nil {
 		req.task.CompleteWithError(fmt.Errorf("Failed to write frame: %v", err.Error()))
 	}
 	if c.dump {
 		frames.DumpOutgoing(req.frame)
 	}
-	_, err = c.conn.Write(data)
+	_, err = c.conn.Write(encodedFrame)
 	if err != nil {
 		req.task.CompleteWithError(fmt.Errorf("Failed to write frame: %v", err.Error()))
 	}
 	req.task.CompleteSuccessfully()
+}
+
+// onFlowControlEvent is called when:
+// a) a new data frame is scheduled for writing
+// b) the flow control window size has changed
+func (c *Connection) processPendingDataFrames() {
+	for _, s := range c.streams {
+		req := s.firstPendingDataFrameWrite()
+		if req != nil {
+			nBytes := int64(len(req.frame.(*frames.DataFrame).Data))
+			if c.remainingFlowControlWindowSize >= nBytes && s.remainingFlowControlWindowSize >= nBytes {
+				c.remainingFlowControlWindowSize -= nBytes
+				s.remainingFlowControlWindowSize -= nBytes
+				s.popFirstPendingDataFrameWrite()
+				c.writeImmediately(req)
+			}
+		}
+	}
 }
 
 func (c *Connection) getOrCreateStream(streamId uint32) *Stream {

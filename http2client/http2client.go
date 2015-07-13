@@ -74,12 +74,12 @@ func (h2c *Http2Client) doRequest(method string, path string, data []byte, inclu
 	requestHeaders := makeHeaders(h2c.conn.Host(), method, path, "http2", h2c.customHeaders, data)
 	headersFrame := frames.NewHeadersFrame(stream.StreamId(), requestHeaders)
 	headersFrame.EndStream = data == nil
-	err := stream.Write(headersFrame)
+	err := stream.Write(headersFrame, timeoutInSeconds) // use same timeout for writing single frame and entire request
 	if err != nil {
 		return "", fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
 	}
 	if data != nil {
-		err = h2c.sendDataFrames(data, stream)
+		err = h2c.sendDataFrames(data, stream, timeoutInSeconds) // use same timeout for writing single frame and entire request
 		if err != nil {
 			return "", err
 		}
@@ -134,7 +134,7 @@ func min(a, b uint32) uint32 {
 	return b
 }
 
-func (h2c *Http2Client) sendDataFrames(data []byte, stream *connection.Stream) error {
+func (h2c *Http2Client) sendDataFrames(data []byte, stream *connection.Stream, timeoutPerFrameInSeconds int) error {
 	// chunkSize := uint32(len(data)) // use this to provoke GOAWAY frame with FRAME_SIZE_ERROR
 	chunkSize := h2c.conn.ServerFrameSize() // TODO: Query chunk size with each iteration -> allow changes during loop
 	nChunksSent := uint32(0)
@@ -144,7 +144,7 @@ func (h2c *Http2Client) sendDataFrames(data []byte, stream *connection.Stream) e
 		nChunksSent = nChunksSent + 1
 		isLast := nChunksSent*chunkSize >= total
 		dataFrame := frames.NewDataFrame(stream.StreamId(), nextChunk, isLast)
-		err := stream.Write(dataFrame)
+		err := stream.Write(dataFrame, timeoutPerFrameInSeconds)
 		if err != nil {
 			return fmt.Errorf("Failed to write DATA frame to %v: %v", h2c.conn.Host(), err.Error())
 		}

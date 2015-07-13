@@ -14,18 +14,38 @@ type Stream struct {
 	err                            error // RST_STREAM received
 	onClosed                       *util.AsyncTask
 	remainingFlowControlWindowSize int64
+	pendingDataFrameWrites         []*writeFrameRequest // only touched in the single threaded frame processing loop
 	streamId                       uint32
 	out                            chan *writeFrameRequest
 }
 
 func newStream(streamId uint32, onClosed *util.AsyncTask, initialFlowControlWindowSize uint32, out chan *writeFrameRequest) *Stream {
 	return &Stream{
-		streamId:                       streamId,
 		receivedHeaders:                make(map[string]string),
+		streamId:                       streamId,
 		onClosed:                       onClosed,
 		remainingFlowControlWindowSize: int64(initialFlowControlWindowSize),
+		pendingDataFrameWrites:         make([]*writeFrameRequest, 0),
 		out: out,
 	}
+}
+
+func (s *Stream) scheduleDataFrameWrite(frame *writeFrameRequest) {
+	s.pendingDataFrameWrites = append(s.pendingDataFrameWrites, frame)
+}
+
+func (s *Stream) firstPendingDataFrameWrite() *writeFrameRequest {
+	if len(s.pendingDataFrameWrites) > 0 {
+		return s.pendingDataFrameWrites[0]
+	}
+	return nil
+}
+
+// called after firstPendingDataFrame() returned != nil, so we know len(s.pendingDataFrames) > 0
+func (s *Stream) popFirstPendingDataFrameWrite() *writeFrameRequest {
+	result := s.pendingDataFrameWrites[0]
+	s.pendingDataFrameWrites = s.pendingDataFrameWrites[1:]
+	return result
 }
 
 func (s *Stream) addReceivedHeaders(headers ...hpack.HeaderField) {
@@ -64,7 +84,7 @@ func (s *Stream) StreamId() uint32 {
 	return s.streamId
 }
 
-func (s *Stream) Write(frame frames.Frame) error {
+func (s *Stream) Write(frame frames.Frame, timeoutInSeconds int) error {
 	if frame.GetStreamId() != s.streamId {
 		return fmt.Errorf("Tried to write frame with stream id %v to stream with id %v. This is a bug.", frame.GetStreamId(), s.streamId)
 	}
@@ -73,5 +93,5 @@ func (s *Stream) Write(frame frames.Frame) error {
 		task:  task,
 		frame: frame,
 	}
-	return task.WaitForCompletion(10)
+	return task.WaitForCompletion(timeoutInSeconds)
 }
