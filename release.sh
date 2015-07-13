@@ -8,7 +8,7 @@
 # boot2docker v1.7.0 has a bug with the ssl certificate, so use --tlsverify=false until this is fixed.
 docker --tlsverify=false run -v $GOPATH:/home/go -t -i fstab/gox gox github.com/fstab/h2c
 
-VERSION=v0.0.5
+VERSION=v0.0.6
 
 rm -rf /tmp/h2c-$VERSION
 mkdir /tmp/h2c-$VERSION
