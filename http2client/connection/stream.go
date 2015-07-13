@@ -15,10 +15,10 @@ type Stream struct {
 	onClosed                       *util.AsyncTask
 	remainingFlowControlWindowSize int64
 	streamId                       uint32
-	out                            chan (frames.Frame)
+	out                            chan *writeFrameRequest
 }
 
-func newStream(streamId uint32, onClosed *util.AsyncTask, initialFlowControlWindowSize uint32, out chan (frames.Frame)) *Stream {
+func newStream(streamId uint32, onClosed *util.AsyncTask, initialFlowControlWindowSize uint32, out chan *writeFrameRequest) *Stream {
 	return &Stream{
 		streamId:                       streamId,
 		receivedHeaders:                make(map[string]string),
@@ -40,7 +40,7 @@ func (s *Stream) appendReceivedData(data []byte) {
 
 func (s *Stream) endStream() {
 	if s.onClosed != nil {
-		s.onClosed.Complete()
+		s.onClosed.CompleteSuccessfully()
 	}
 }
 
@@ -68,6 +68,10 @@ func (s *Stream) Write(frame frames.Frame) error {
 	if frame.GetStreamId() != s.streamId {
 		return fmt.Errorf("Tried to write frame with stream id %v to stream with id %v. This is a bug.", frame.GetStreamId(), s.streamId)
 	}
-	s.out <- frame
-	return nil
+	task := util.NewAsyncTask()
+	s.out <- &writeFrameRequest{
+		task:  task,
+		frame: frame,
+	}
+	return task.WaitForCompletion(10)
 }

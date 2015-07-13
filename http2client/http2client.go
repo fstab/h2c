@@ -146,7 +146,7 @@ func (h2c *Http2Client) sendDataFrames(data []byte, stream *connection.Stream) e
 		dataFrame := frames.NewDataFrame(stream.StreamId(), nextChunk, isLast)
 		err := stream.Write(dataFrame)
 		if err != nil {
-			return fmt.Errorf("Failed to write HEADERS frame to %v: %v", h2c.conn.Host(), err.Error())
+			return fmt.Errorf("Failed to write DATA frame to %v: %v", h2c.conn.Host(), err.Error())
 		}
 	}
 	return nil

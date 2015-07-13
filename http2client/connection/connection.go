@@ -12,7 +12,7 @@ import (
 
 type Connection struct {
 	in              chan frames.Frame
-	out             chan frames.Frame
+	out             chan *writeFrameRequest
 	shutdown        chan bool
 	info            *info
 	settings        *settings
@@ -34,6 +34,11 @@ type settings struct {
 	initialWindowSizeForNewStreams uint32
 }
 
+type writeFrameRequest struct {
+	frame frames.Frame
+	task  *util.AsyncTask
+}
+
 func Start(host string, port int, dump bool) (*Connection, error) {
 	hostAndPort := fmt.Sprintf("%v:%v", host, port)
 	conn, err := tls.Dial("tcp", hostAndPort, &tls.Config{
@@ -50,7 +55,16 @@ func Start(host string, port int, dump bool) (*Connection, error) {
 	c := newConnection(conn, host, port, dump)
 	go c.runFrameHandlerLoop()
 	go c.runIncomingFrameReader()
-	c.out <- frames.NewSettingsFrame(0)
+	task := util.NewAsyncTask()
+	c.out <- &writeFrameRequest{
+		task:  task,
+		frame: frames.NewSettingsFrame(0),
+	}
+	err = task.WaitForCompletion(10)
+	if err != nil {
+		c.Shutdown()
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -61,7 +75,7 @@ func (c *Connection) Shutdown() {
 func newConnection(conn net.Conn, host string, port int, dump bool) *Connection {
 	return &Connection{
 		in:       make(chan frames.Frame),
-		out:      make(chan frames.Frame),
+		out:      make(chan *writeFrameRequest),
 		shutdown: make(chan bool),
 		info: &info{
 			host: host,
@@ -86,8 +100,8 @@ func (c *Connection) runFrameHandlerLoop() {
 		select {
 		case incomingFrame := <-c.in:
 			c.handleIncomingFrame(incomingFrame)
-		case outgoingFrame := <-c.out:
-			c.handleOutgoingFrame(outgoingFrame)
+		case req := <-c.out:
+			c.handleOutgoingFrame(req)
 		case <-c.shutdown:
 			c.isShutdown = true
 			c.conn.Close()
@@ -170,22 +184,19 @@ func (s *settings) apply(frame *frames.SettingsFrame) {
 	// TODO: Implement other settings, like HEADER_TABLE_SIZE.
 }
 
-func (c *Connection) handleOutgoingFrame(frame frames.Frame) {
-	data, err := frame.Encode(c.encodingContext)
+func (c *Connection) handleOutgoingFrame(req *writeFrameRequest) {
+	data, err := req.frame.Encode(c.encodingContext)
 	if err != nil {
-		// TODO: error handling
-		fmt.Fprintf(os.Stderr, "Failed to write frame: %v", err.Error())
-		c.shutdown <- true
+		req.task.CompleteWithError(fmt.Errorf("Failed to write frame: %v", err.Error()))
 	}
 	if c.dump {
-		frames.DumpOutgoing(frame)
+		frames.DumpOutgoing(req.frame)
 	}
 	_, err = c.conn.Write(data)
 	if err != nil {
-		// TODO: error handling
-		fmt.Fprintf(os.Stderr, "Failed to write frame: %v", err.Error())
-		c.shutdown <- true
+		req.task.CompleteWithError(fmt.Errorf("Failed to write frame: %v", err.Error()))
 	}
+	req.task.CompleteSuccessfully()
 }
 
 func (c *Connection) getOrCreateStream(streamId uint32) *Stream {
