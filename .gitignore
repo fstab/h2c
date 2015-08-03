@@ -1,2 +1,4 @@
 .idea
 h2c-v*.zip
+arquillian-tests/h2c.iml
+arquillian-tests/target/

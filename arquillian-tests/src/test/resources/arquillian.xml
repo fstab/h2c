@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<arquillian xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xmlns="http://jboss.org/schema/arquillian"
+            xsi:schemaLocation="http://jboss.org/schema/arquillian
+  http://jboss.org/schema/arquillian/arquillian_1_0.xsd">
+
+    <extension qualifier="docker">
+
+        <!-- The magic string dockerHost will be replaced with the boot2docker ip. -->
+        <property name="serverUri">https://dockerHost:2376</property>
+
+        <!-- The YAML configuration does not have any dynamic way to define the boot2docker ip. -->
+        <!-- Therefore, we must add an entry in /etc/hosts to resolve boot2docker to boot2docker's ip -->
+        <!-- See https://github.com/arquillian/arquillian-cube/issues/164 -->
+        <property name="dockerContainers">
+            wildfly-docker:
+                image: fstab/wildfly-http2:9.0.0.Beta1
+                await:
+                    strategy: static
+                    ip: boot2docker
+                    ports: [8080, 8443, 9990]
+                    sleepPollingTime: 1000
+                    iterations: 120
+                portBindings: ["8080", "9990", "8443"]
+        </property>
+    </extension>
+
+    <!-- The container configuration uses the magic string dockerServerIp to point to the boot2docker ip. -->
+    <container qualifier="wildfly-docker" default="true">
+        <configuration>
+            <property name="managementAddress">dockerServerIp</property>
+            <property name="managementPort">9990</property>
+            <property name="username">admin</property>
+            <property name="password">admin</property>
+        </configuration>
+    </container>
+</arquillian>
