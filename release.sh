@@ -5,8 +5,7 @@
 # If you need a release, please get it from https://github.com/fstab/h2c
 # ----------------------------------------------------------------------
 
-# boot2docker v1.7.0 has a bug with the ssl certificate, so use --tlsverify=false until this is fixed.
-docker --tlsverify=false run -v $GOPATH:/home/go -t -i fstab/gox gox github.com/fstab/h2c
+docker run -v $GOPATH:/home/go -t -i fstab/gox gox github.com/fstab/h2c
 
 VERSION=v0.0.6
 
