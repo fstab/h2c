@@ -4,6 +4,8 @@ h2c Arquillian Tests
 Test the [HTTP/2 client (h2c)](https://github.com/fstab/h2c) against
 [Wildfly with HTTP/2 Support in a Docker Image](https://github.com/fstab/docker-wildfly-http2).
 
+The tests run [h2c](https://github.com/fstab/h2c) as an external command, so [h2c](https://github.com/fstab/h2c) should be availbale in the `PATH`.
+
 Run with [maven](https://maven.apache.org/) as follows:
 
 ```bash
