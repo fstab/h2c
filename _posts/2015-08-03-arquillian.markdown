@@ -30,6 +30,8 @@ Running the tests in the [arquillian-tests] directory will:
 * Deploy a test Servlet.
 * Run [h2c] GET and POST requests and verify the responses.
 
+[Arquillian Cube] provides a convenient way to test HTTP/2 services through real TCP connections without using mocks.
+
 ### How to Use Docker with Arquillian
 
 First of all, the [arquillian-cube-docker] dependency need to be added to `pom.xml`
@@ -72,26 +74,22 @@ The container itself is configured in `arquillian.xml` in `src/test/resources`:
 
     <extension qualifier="docker">
 
-        <!-- The magic string dockerHost will be replaced with the boot2docker ip. -->
+        <!-- REMOVE THE serverUri CONFIG IF RUNNING ON LINUX -->
         <property name="serverUri">https://dockerHost:2376</property>
 
-        <!-- The YAML configuration does not have any dynamic way to define the boot2docker ip. -->
-        <!-- Therefore, we must add an entry in /etc/hosts to resolve boot2docker to boot2docker's ip -->
-        <!-- See https://github.com/arquillian/arquillian-cube/issues/164 -->
         <property name="dockerContainers">
             wildfly-docker:
                 image: fstab/wildfly-http2:9.0.0.Beta1
                 await:
-                    strategy: static
-                    ip: boot2docker
-                    ports: [8080, 8443, 9990]
-                    sleepPollingTime: 1000
-                    iterations: 120
-                portBindings: ["8080", "9990", "8443"]
+                    strategy: polling
+                    sleepPollingTime: 20000
+                    iterations: 6
+                portBindings: ["8443", "9990"]
         </property>
     </extension>
 
-    <!-- The container configuration uses the magic string dockerServerIp to point to the boot2docker ip. -->
+    <!-- The container configuration uses the magic string dockerServerIp -->
+    <!-- to point to the boot2docker ip (Windows, OS X) or to localhost (Linux). -->
     <container qualifier="wildfly-docker" default="true">
         <configuration>
             <property name="managementAddress">dockerServerIp</property>
@@ -103,15 +101,13 @@ The container itself is configured in `arquillian.xml` in `src/test/resources`:
 </arquillian>
 {% endhighlight %}
 
-There are still some limitations with the current implementation:
+<div style="background-color: #99ffaa; border: 2px solid #99bb00; margin: auto; padding: 10px;">
+<b>Update:</b> The arquillian.xml in the original post contained a static wait strategy with a statically configured boot2docker host. I simplified this after Alex Soto's comment. Thanks Alex.
+</div>
+<br/>
 
-* The tests run only with [boot2docker], not on native Linux hosts.
-* There must be an entry in the [hosts file] mapping the host name _boot2docker_
-  to the boot2docker ip.
-* boot2docker must run on port 2376.
-
-However, despite these limitations, [Arquillian Cube] provides a convenient way to test
-HTTP/2 services through real TCP connections without using mocks.
+The configuration above assumes [boot2docker] listening on port `2376`.
+In order to run it on native Linux, remove the property `serverUri` in `arquillian.xml`.
 
 [h2c]: https://github.com/fstab/h2c
 [Arquillian Cube]: https://github.com/arquillian/arquillian-cube
