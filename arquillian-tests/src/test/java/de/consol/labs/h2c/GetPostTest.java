@@ -42,8 +42,13 @@ public class GetPostTest {
 
     private String getBoot2DockerIP() {
         String dockerHost = System.getenv("DOCKER_HOST");
-        Assert.assertNotNull("The environment variable DOCKER_HOST is not set.", dockerHost);
-        return dockerHost.replaceFirst(".*://", "").replaceFirst(":[0-9]*", "");
+        if (dockerHost == null || dockerHost.startsWith("unix://")) {
+            // running natively on Linux
+            return "localhost";
+        } else {
+            // running with boot2docker
+            return dockerHost.replaceFirst(".*://", "").replaceFirst(":[0-9]*", "");
+        }
     }
 
     @After
