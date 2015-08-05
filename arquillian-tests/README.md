@@ -15,5 +15,5 @@ mvn clean package
 The tests use the [Arquillian Cube Extension](https://github.com/arquillian/arquillian-cube/)
 to manage the [Docker](https://www.docker.com) containers.
 
-The current configuration runs with [boot2docker](http://boot2docker.io) listening on port `2376`.
+The current configuration assumes [boot2docker](http://boot2docker.io) listening on port `2376`.
 In order to run it on native Linux, remove the property `serverUri` in `src/test/resources/arquillian.xml`.
