@@ -8,9 +8,9 @@ import (
 	"github.com/fstab/h2c/http2client/connection"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/util"
-	"go.googlesource.com/go/src/strings"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type Http2Client struct {

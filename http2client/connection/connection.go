@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/util"
-	"go.googlesource.com/go/src/io"
+	"io"
 	"net"
 	"os"
 )
