@@ -11,11 +11,11 @@
 
         <property name="dockerContainers">
             wildfly-docker:
-                image: fstab/wildfly-http2:9.0.0.Beta1
+                image: fstab/wildfly-http2:9.0.1.Final
                 await:
                     strategy: polling
-                    sleepPollingTime: 20000
-                    iterations: 6
+                    sleepPollingTime: 1000
+                    iterations: 120
                 portBindings: ["8443", "9990"]
         </property>
     </extension>
