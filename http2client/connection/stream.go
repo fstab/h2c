@@ -9,23 +9,23 @@ import (
 )
 
 type Stream struct {
-	receivedHeaders                map[string]string // TODO: Does not allow multiple headers with same name
-	receivedData                   bytes.Buffer
-	err                            error // RST_STREAM received
-	onClosed                       *util.AsyncTask
-	remainingFlowControlWindowSize int64
-	pendingDataFrameWrites         []*writeFrameRequest // only touched in the single threaded frame processing loop
-	streamId                       uint32
-	out                            chan *writeFrameRequest
+	receivedHeaders         map[string]string // TODO: Does not allow multiple headers with same name
+	receivedData            bytes.Buffer
+	err                     error // RST_STREAM received
+	onClosed                *util.AsyncTask
+	remainingSendWindowSize int64
+	pendingDataFrameWrites  []*writeFrameRequest // only touched in the single threaded frame processing loop
+	streamId                uint32
+	out                     chan *writeFrameRequest
 }
 
-func newStream(streamId uint32, onClosed *util.AsyncTask, initialFlowControlWindowSize uint32, out chan *writeFrameRequest) *Stream {
+func newStream(streamId uint32, onClosed *util.AsyncTask, initialSendWindowSize uint32, out chan *writeFrameRequest) *Stream {
 	return &Stream{
-		receivedHeaders:                make(map[string]string),
-		streamId:                       streamId,
-		onClosed:                       onClosed,
-		remainingFlowControlWindowSize: int64(initialFlowControlWindowSize),
-		pendingDataFrameWrites:         make([]*writeFrameRequest, 0),
+		receivedHeaders:         make(map[string]string),
+		streamId:                streamId,
+		onClosed:                onClosed,
+		remainingSendWindowSize: int64(initialSendWindowSize),
+		pendingDataFrameWrites:  make([]*writeFrameRequest, 0),
 		out: out,
 	}
 }
