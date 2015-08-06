@@ -63,6 +63,7 @@
     </dependencies>
 
     <build>
+        <finalName>h2c</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
