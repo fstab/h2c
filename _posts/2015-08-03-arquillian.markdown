@@ -74,7 +74,7 @@ The container itself is configured in `arquillian.xml` in `src/test/resources`:
 
     <extension qualifier="docker">
 
-        <!-- REMOVE THE serverUri CONFIG IF RUNNING ON LINUX -->
+        <!-- REMOVE THE serverUri IF RUNNING ON LINUX -->
         <property name="serverUri">https://dockerHost:2376</property>
 
         <property name="dockerContainers">
