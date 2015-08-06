@@ -11,18 +11,19 @@ import (
 )
 
 type Connection struct {
-	in                      chan frames.Frame
-	out                     chan *writeFrameRequest
-	shutdown                chan bool
-	info                    *info
-	settings                *settings
-	streams                 map[uint32]*Stream // StreamID -> *stream
-	conn                    net.Conn
-	dump                    bool
-	isShutdown              bool
-	encodingContext         *frames.EncodingContext
-	decodingContext         *frames.DecodingContext
-	remainingSendWindowSize int64
+	in                         chan frames.Frame
+	out                        chan *writeFrameRequest
+	shutdown                   chan bool
+	info                       *info
+	settings                   *settings
+	streams                    map[uint32]*Stream // StreamID -> *stream
+	conn                       net.Conn
+	dump                       bool
+	isShutdown                 bool
+	encodingContext            *frames.EncodingContext
+	decodingContext            *frames.DecodingContext
+	remainingSendWindowSize    int64
+	remainingReceiveWindowSize int64
 }
 
 type info struct {
@@ -31,8 +32,9 @@ type info struct {
 }
 
 type settings struct {
-	serverFrameSize                    uint32
-	initialSendWindowSizeForNewStreams uint32
+	serverFrameSize                       uint32
+	initialSendWindowSizeForNewStreams    uint32
+	initialReceiveWindowSizeForNewStreams uint32
 }
 
 type writeFrameRequest struct {
@@ -87,16 +89,18 @@ func newConnection(conn net.Conn, host string, port int, dump bool) *Connection 
 			port: port,
 		},
 		settings: &settings{
-			serverFrameSize:                    2 << 13,   // Minimum size that must be supported by all server implementations.
-			initialSendWindowSizeForNewStreams: 2<<15 - 1, // Initial flow-control window size for new streams is 65,535 octets.
+			serverFrameSize:                       2 << 13,   // Minimum size that must be supported by all server implementations.
+			initialSendWindowSizeForNewStreams:    2<<15 - 1, // Initial flow-control window size for new streams is 65,535 octets.
+			initialReceiveWindowSizeForNewStreams: 2<<15 - 1,
 		},
-		streams:                 make(map[uint32]*Stream),
-		isShutdown:              false,
-		conn:                    conn,
-		dump:                    dump,
-		encodingContext:         frames.NewEncodingContext(),
-		decodingContext:         frames.NewDecodingContext(),
-		remainingSendWindowSize: 2<<15 - 1,
+		streams:                    make(map[uint32]*Stream),
+		isShutdown:                 false,
+		conn:                       conn,
+		dump:                       dump,
+		encodingContext:            frames.NewEncodingContext(),
+		decodingContext:            frames.NewDecodingContext(),
+		remainingSendWindowSize:    2<<15 - 1,
+		remainingReceiveWindowSize: 2<<15 - 1,
 	}
 }
 
@@ -253,7 +257,7 @@ func (c *Connection) processPendingDataFrames() {
 func (c *Connection) getOrCreateStream(streamId uint32) *Stream {
 	stream, ok := c.streams[streamId]
 	if !ok {
-		stream = newStream(streamId, nil, c.settings.initialSendWindowSizeForNewStreams, c.out)
+		stream = newStream(streamId, nil, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c.out)
 		c.streams[streamId] = stream
 	}
 	return stream
@@ -276,7 +280,7 @@ func (c *Connection) InitNewStream(onClosed *util.AsyncTask) *Stream {
 	if len(streamIdsInUse) > 0 {
 		nextStreamId = max(streamIdsInUse) + 2
 	}
-	c.streams[nextStreamId] = newStream(nextStreamId, onClosed, c.settings.initialSendWindowSizeForNewStreams, c.out)
+	c.streams[nextStreamId] = newStream(nextStreamId, onClosed, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c.out)
 	return c.streams[nextStreamId]
 }
 
@@ -299,10 +303,6 @@ func (c *Connection) ServerFrameSize() uint32 {
 
 func (c *Connection) SetServerFrameSize(size uint32) {
 	c.settings.serverFrameSize = size
-}
-
-func (c *Connection) SetInitialWindowSizeForNewStreams(size uint32) {
-	c.settings.initialSendWindowSizeForNewStreams = size
 }
 
 func (c *Connection) Host() string {
