@@ -1,6 +1,7 @@
 package frames
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 )
@@ -39,7 +40,11 @@ func (f *WindowUpdateFrame) Type() Type {
 func (f *WindowUpdateFrame) Encode(context *EncodingContext) ([]byte, error) {
 	payload := make([]byte, 4)
 	binary.BigEndian.PutUint32(payload, uint32(f.WindowSizeIncrement))
-	return payload, nil
+
+	var result bytes.Buffer
+	result.Write(encodeHeader(f.Type(), f.StreamId, uint32(len(payload)), []Flag{}))
+	result.Write(payload)
+	return result.Bytes(), nil
 }
 
 func (f *WindowUpdateFrame) GetStreamId() uint32 {

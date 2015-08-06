@@ -157,6 +157,7 @@ func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 			fmt.Fprintf(os.Stderr, "Received data for unknown stream %v. Ignoring this frame.", frame.GetStreamId())
 			return
 		}
+		c.flowControlForIncomingDataFrame(frame, stream)
 		stream.appendReceivedData(frame.Data)
 		if frame.EndStream {
 			stream.endStream()
@@ -179,6 +180,34 @@ func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 	default:
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Received unknown frame type %v", frame.Type())
+	}
+}
+
+// Just a quick implementation to make large downloads work.
+// Should be replaced with a more sophisticated flow control strategy
+func (c *Connection) flowControlForIncomingDataFrame(frame *frames.DataFrame, stream *Stream) {
+	threshold := uint32(2 << 13) // size of one frame
+	stream.remainingReceiveWindowSize -= int64(len(frame.Data))
+	if stream.remainingReceiveWindowSize < int64(threshold) {
+		go func() {
+			diff := int64(c.settings.initialReceiveWindowSizeForNewStreams) - stream.remainingReceiveWindowSize
+			stream.remainingReceiveWindowSize += diff
+			c.out <- &writeFrameRequest{
+				frame: frames.NewWindowUpdateFrame(stream.streamId, uint32(diff)),
+				task:  util.NewAsyncTask(),
+			}
+		}()
+	}
+	c.remainingReceiveWindowSize -= int64(len(frame.Data))
+	if c.remainingReceiveWindowSize < int64(threshold) {
+		go func() {
+			diff := int64(2<<15-1) - c.remainingReceiveWindowSize
+			c.remainingReceiveWindowSize += diff
+			c.out <- &writeFrameRequest{
+				frame: frames.NewWindowUpdateFrame(0, uint32(diff)),
+				task:  util.NewAsyncTask(),
+			}
+		}()
 	}
 }
 
