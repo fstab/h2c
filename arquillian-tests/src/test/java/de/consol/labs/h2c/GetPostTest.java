@@ -6,10 +6,7 @@ import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 import org.junit.runner.RunWith;
 
 import java.io.File;
@@ -63,16 +60,43 @@ public class GetPostTest {
         Assert.assertTrue(result.getStdout().contains("Btw, this is request number " + 1));
     }
 
+    /**
+     * The initial value for the flow-control window is 65,535 octets.
+     * Get a few more bytes to see if flow control works.
+     */
     @Test
-    public void testPost() throws IOException, InterruptedException {
-        int nBytes = 27;
+    public void testGetFlowControl() throws IOException, InterruptedException {
+        H2c result = H2c.runWithTimeout(format("get %s?size=66000", path), 1);
+        Assert.assertTrue(result.getStdout().contains("Btw, this is request number " + 1));
+        Assert.assertTrue(result.getStdout().length() > 66000);
+    }
+
+    private File makeTmpFile(int nBytes) throws IOException {
         File tmp = File.createTempFile("h2c-test-data-", ".dat");
         tmp.deleteOnExit();
         try (FileOutputStream s = new FileOutputStream(tmp)) {
             s.write(new byte[nBytes]);
         }
-        H2c result = H2c.runWithTimeout(format("post --file %s %s", tmp.getAbsolutePath(), path), 1);
-        assertTrue(result.getStdout().contains("Received " + nBytes + " characters."));
-        assertTrue(tmp.delete());
+        return tmp;
+    }
+
+    @Test
+    public void testPost() throws IOException, InterruptedException {
+        File dataFile = makeTmpFile(27);
+        H2c result = H2c.runWithTimeout(format("post --file %s %s", dataFile.getAbsolutePath(), path), 1);
+        assertTrue(result.getStdout().contains("Received " + 27 + " characters."));
+        assertTrue(dataFile.delete());
+    }
+
+    /**
+     * The initial value for the flow-control window is 65,535 octets.
+     * Post a few more bytes to see if flow control works.
+     */
+    @Test
+    public void testPostFlowControl() throws IOException, InterruptedException {
+        File dataFile = makeTmpFile(65000);
+        H2c result = H2c.runWithTimeout(format("post --file %s %s", dataFile.getAbsolutePath(), path), 1);
+        assertTrue(result.getStdout().contains("Received " + 65000 + " characters."));
+        assertTrue(dataFile.delete());
     }
 }
