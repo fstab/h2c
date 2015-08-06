@@ -42,7 +42,7 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 }
 
 func (h2c *Http2Client) isConnected() bool {
-	return h2c.conn != nil
+	return h2c.conn != nil && !h2c.conn.IsShutdown()
 }
 
 func (h2c *Http2Client) Disconnect() (string, error) {

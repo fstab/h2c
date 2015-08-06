@@ -73,6 +73,10 @@ func (c *Connection) Shutdown() {
 	c.shutdown <- true
 }
 
+func (c *Connection) IsShutdown() bool {
+	return c.isShutdown
+}
+
 func newConnection(conn net.Conn, host string, port int, dump bool) *Connection {
 	return &Connection{
 		in:       make(chan frames.Frame),
@@ -120,9 +124,13 @@ func (c *Connection) runIncomingFrameReader() {
 			return
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error while reading next frame: %v", err.Error()) // TODO: Error handling
+			fmt.Fprintf(os.Stderr, "Error while reading next frame: %v\n", err.Error()) // TODO: Error handling
+			fmt.Fprintf(os.Stderr, "Closing connection to %v:%v\n", c.info.host, c.info.port)
+			c.Shutdown()
+			return
+		} else {
+			c.in <- frame
 		}
-		c.in <- frame
 	}
 }
 
