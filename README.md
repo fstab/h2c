@@ -48,11 +48,16 @@ go get github.com/fstab/h2c
 Related Work
 ------------
 
-`h2c` is built using Brad Fitzpatrick's [HTTP/2 support for Go](https://github.com/bradfitz/http2). There is an HTTP/2 console debugger included in [bradfitz/http2](https://github.com/bradfitz/http2), but just like `h2c`, it is currently only a quick few hour hack, so it is hard to tell if they aim at the same kind of tool.
+`h2c` uses parts of Brad Fitzpatrick's [HTTP/2 support for Go](https://github.com/bradfitz/http2). There is an HTTP/2 console debugger included in [bradfitz/http2](https://github.com/bradfitz/http2), but just like `h2c`, it is currently only a quick few hour hack, so it is hard to tell if they aim at the same kind of tool.
 
 LICENSE
 -------
 
 `h2c` is licensed under the [Apache License, Version 2.0](LICENSE).
 
-`h2c` is built using [Go](https://golang.org/) and [bradfitz/http2](https://github.com/bradfitz/http2). Both are licensed under [Google's Go license](https://code.google.com/p/go/source/browse/LICENSE).
+`h2c` is implemented in [Go](https://golang.org) and uses Go's [standard library](https://golang.org/pkg/#stdlib), which is licensed under [Google's Go license](https://code.google.com/p/go/source/browse/LICENSE), which is a variant of the [BSD License](https://en.wikipedia.org/wiki/BSD_licenses).
+
+The following 3rd party libraries are used:
+
+  * `github.com/fstab/http2/hpack` is cloned from `github.com/bradfitz/http2/hpack`. It implements the [Header Compression for HTTP/2 (HPACK)](https://httpwg.github.io/specs/rfc7541.html). The library is licensed  [under the terms of Go itself](https://github.com/fstab/http2/blob/master/LICENSE).
+  * `github.com/fstab/color` is cloned from `github.com/fatih/color`. It implements the color output used in `h2c start --dump`. The library is licensed under an [MIT License](https://github.com/fstab/color/blob/master/LICENSE.md).
