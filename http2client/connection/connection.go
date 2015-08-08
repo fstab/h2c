@@ -186,9 +186,9 @@ func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 // Just a quick implementation to make large downloads work.
 // Should be replaced with a more sophisticated flow control strategy
 func (c *Connection) flowControlForIncomingDataFrame(frame *frames.DataFrame, stream *Stream) {
-	threshold := uint32(2 << 13) // size of one frame
+	threshold := int64(2 << 13) // size of one frame
 	stream.remainingReceiveWindowSize -= int64(len(frame.Data))
-	if stream.remainingReceiveWindowSize < int64(threshold) {
+	if stream.remainingReceiveWindowSize < threshold {
 		go func() {
 			diff := int64(c.settings.initialReceiveWindowSizeForNewStreams) - stream.remainingReceiveWindowSize
 			stream.remainingReceiveWindowSize += diff
@@ -199,7 +199,7 @@ func (c *Connection) flowControlForIncomingDataFrame(frame *frames.DataFrame, st
 		}()
 	}
 	c.remainingReceiveWindowSize -= int64(len(frame.Data))
-	if c.remainingReceiveWindowSize < int64(threshold) {
+	if c.remainingReceiveWindowSize < threshold {
 		go func() {
 			diff := int64(2<<15-1) - c.remainingReceiveWindowSize
 			c.remainingReceiveWindowSize += diff
