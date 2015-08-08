@@ -4,10 +4,10 @@ package http2client
 import (
 	"errors"
 	"fmt"
-	"github.com/fstab/http2/hpack"
 	"github.com/fstab/h2c/http2client/connection"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/util"
+	"github.com/fstab/http2/hpack"
 	"sort"
 	"strconv"
 	"strings"

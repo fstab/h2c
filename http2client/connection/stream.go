@@ -3,9 +3,9 @@ package connection
 import (
 	"bytes"
 	"fmt"
-	"github.com/fstab/http2/hpack"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/util"
+	"github.com/fstab/http2/hpack"
 )
 
 type Stream struct {
