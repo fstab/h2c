@@ -3,7 +3,7 @@ package frames
 import (
 	"bytes"
 	"fmt"
-	"github.com/bradfitz/http2/hpack"
+	"github.com/fstab/http2/hpack"
 )
 
 const (

@@ -4,7 +4,7 @@ package http2client
 import (
 	"errors"
 	"fmt"
-	"github.com/bradfitz/http2/hpack"
+	"github.com/fstab/http2/hpack"
 	"github.com/fstab/h2c/http2client/connection"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/util"

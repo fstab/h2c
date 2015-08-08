@@ -2,7 +2,7 @@ package frames
 
 import (
 	"fmt"
-	"github.com/fatih/color"
+	"github.com/fstab/color"
 )
 
 var (
