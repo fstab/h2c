@@ -43,6 +43,14 @@ func dump(prefix string, frame Frame) {
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpEndStream(f.EndStream)
 		keyColor.Printf("    {%v bytes}\n", len(f.Data))
+	case *PriorityFrame:
+		frameTypeColor.Printf("PRIORITY")
+		keyColor.Printf("    Stream dependency:")
+		valueColor.Printf(" %v\n", f.StreamDependencyId)
+		keyColor.Printf("    Weight:")
+		valueColor.Printf(" %v\n", f.weight)
+		keyColor.Printf("    Exclusive:")
+		valueColor.Printf(" %v\n", f.exclusive)
 	case *SettingsFrame:
 		frameTypeColor.Printf("SETTINGS")
 		streamIdColor.Printf("(%v)\n", f.StreamId)

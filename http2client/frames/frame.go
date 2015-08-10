@@ -12,6 +12,7 @@ type Flag byte
 const (
 	DATA_TYPE          Type = 0x00
 	HEADERS_TYPE       Type = 0x01
+	PRIORITY_TYPE      Type = 0x02
 	RST_STREAM_TYPE    Type = 0x03
 	SETTINGS_TYPE      Type = 0x04
 	GOAWAY_TYPE        Type = 0x07
@@ -30,6 +31,8 @@ func FindDecoder(frameType Type) func(flags byte, streamId uint32, payload []byt
 		return DecodeDataFrame
 	case HEADERS_TYPE:
 		return DecodeHeadersFrame
+	case PRIORITY_TYPE:
+		return DecodePriorityFrame
 	case RST_STREAM_TYPE:
 		return DecodeRstStreamFrame
 	case SETTINGS_TYPE:
