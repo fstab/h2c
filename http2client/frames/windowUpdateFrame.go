@@ -22,15 +22,7 @@ func DecodeWindowUpdateFrame(flags byte, streamId uint32, payload []byte, contex
 	if len(payload) < 4 {
 		return nil, fmt.Errorf("FRAME_SIZE_ERROR: Received WINDOW_UPDATE frame of length %v", len(payload))
 	}
-	return NewWindowUpdateFrame(streamId, readWindowSizeIncrement(payload)), nil
-}
-
-// TODO: This is copy-and-paste
-func readWindowSizeIncrement(payload []byte) uint32 {
-	buffer := make([]byte, 4)
-	copy(buffer, payload[0:4])
-	buffer[0] = buffer[0] & 0x7F // clear reserved bit
-	return binary.BigEndian.Uint32(buffer)
+	return NewWindowUpdateFrame(streamId, uint32_ignoreFirstBit(payload[0:4])), nil
 }
 
 func (f *WindowUpdateFrame) Type() Type {

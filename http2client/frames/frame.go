@@ -15,6 +15,7 @@ const (
 	PRIORITY_TYPE      Type = 0x02
 	RST_STREAM_TYPE    Type = 0x03
 	SETTINGS_TYPE      Type = 0x04
+	PUSH_PROMISE_TYPE  Type = 0x05
 	GOAWAY_TYPE        Type = 0x07
 	WINDOW_UPDATE_TYPE Type = 0x08
 )
@@ -37,6 +38,8 @@ func FindDecoder(frameType Type) func(flags byte, streamId uint32, payload []byt
 		return DecodeRstStreamFrame
 	case SETTINGS_TYPE:
 		return DecodeSettingsFrame
+	case PUSH_PROMISE_TYPE:
+		return DecodePushPromiseFrame
 	case GOAWAY_TYPE:
 		return DecodeGoAwayFrame
 	case WINDOW_UPDATE_TYPE:
@@ -71,14 +74,11 @@ type FrameHeader struct {
 }
 
 func DecodeHeader(data []byte) *FrameHeader {
-	length := append(make([]byte, 1), data[0:3]...)   // 4 Byte Big Endian
-	streamId := append(make([]byte, 0), data[5:9]...) // 4 Byte Big Endian
-	streamId[0] = streamId[0] & 0x7F                  // clear reserved bit
 	return &FrameHeader{
-		Length:     binary.BigEndian.Uint32(length),
+		Length:     uint32_ignoreFirstBit(data[0:3]),
 		HeaderType: Type(data[3]),
 		Flags:      data[4],
-		StreamId:   binary.BigEndian.Uint32(streamId),
+		StreamId:   uint32_ignoreFirstBit(data[5:9]),
 	}
 }
 

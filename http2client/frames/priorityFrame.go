@@ -25,17 +25,10 @@ func DecodePriorityFrame(flags byte, streamId uint32, payload []byte, context *D
 	if len(payload) != 5 {
 		return nil, fmt.Errorf("FRAME_SIZE_ERROR: Received PRIORITY frame of length %v", len(payload))
 	}
-	streamDependencyId := streamDependencyId(payload[0:4])
+	streamDependencyId := uint32_ignoreFirstBit(payload[0:4])
 	weight := payload[4]
 	exclusive := payload[0]&0x80 == 1
 	return NewPriorityFrame(streamId, streamDependencyId, weight, exclusive), nil
-}
-
-func streamDependencyId(payload []byte) uint32 {
-	buffer := make([]byte, 4)
-	copy(buffer, payload[0:4])
-	buffer[0] = buffer[0] & 0x7F // clear reserved bit
-	return binary.BigEndian.Uint32(buffer)
 }
 
 func (f *PriorityFrame) Type() Type {

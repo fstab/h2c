@@ -63,6 +63,20 @@ func dump(prefix string, frame Frame) {
 				valueColor.Printf(" %v\n", value)
 			}
 		}
+	case *PushPromiseFrame:
+		frameTypeColor.Printf("PUSH_PROMISE")
+		streamIdColor.Printf("(%v)\n", f.StreamId)
+		dumpEndHeaders(f.EndHeaders)
+		keyColor.Printf("    Promised Stream Id:")
+		valueColor.Printf(" %v\n", f.PromisedStreamId)
+		if len(f.Headers) == 0 {
+			keyColor.Printf("    {empty}\n")
+		} else {
+			for _, header := range f.Headers {
+				keyColor.Printf("    %v:", header.Name)
+				valueColor.Printf(" %v\n", header.Value)
+			}
+		}
 	case *RstStreamFrame:
 		frameTypeColor.Printf("RST_STREAM")
 		streamIdColor.Printf("(%v)\n", f.StreamId)

@@ -23,16 +23,9 @@ func DecodeGoAwayFrame(flags byte, streamId uint32, payload []byte, context *Dec
 	if len(payload) < 8 {
 		return nil, fmt.Errorf("FRAME_SIZE_ERROR: Received GOAWAY frame of length %v", len(payload))
 	}
-	lastStreamId := readLastStreamId(payload[0:4])
+	lastStreamId := uint32_ignoreFirstBit(payload[0:4])
 	errorCode := ErrorCode(binary.BigEndian.Uint32(payload[4:8]))
 	return NewGoAwayFrame(streamId, lastStreamId, errorCode), nil
-}
-
-func readLastStreamId(payload []byte) uint32 {
-	buffer := make([]byte, 4)
-	copy(buffer, payload[0:4])
-	buffer[0] = buffer[0] & 0x7F // clear reserved bit
-	return binary.BigEndian.Uint32(buffer)
 }
 
 func (f *GoAwayFrame) Type() Type {
