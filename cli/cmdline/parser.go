@@ -30,7 +30,7 @@ func Parse(args []string) (*rpc.Command, error) {
 	cmdArgs := make([]string, 0)
 	if len(remainingArgs) > 1 {
 		cmdArgs = remainingArgs[1:]
-		if !cmd.areArgsValid(cmdArgs) {
+		if cmd.areArgsValid != nil && !cmd.areArgsValid(cmdArgs) {
 			return nil, errors.New(usage(cmd))
 		}
 	}

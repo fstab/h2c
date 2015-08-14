@@ -10,6 +10,8 @@ import (
 	"os"
 )
 
+const CLIENT_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+
 type Connection struct {
 	in                         chan frames.Frame
 	out                        chan *writeFrameRequest
@@ -51,7 +53,10 @@ func Start(host string, port int, dump bool) (*Connection, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to %v: %v", hostAndPort, err.Error())
 	}
-	_, err = conn.Write([]byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) // client preface
+	if conn.ConnectionState().NegotiatedProtocol != "h2" {
+		return nil, fmt.Errorf("Server does not support HTTP/2 protocol.")
+	}
+	_, err = conn.Write([]byte(CLIENT_PREFACE))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to write client preface to %v: %v", hostAndPort, err.Error())
 	}

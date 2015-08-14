@@ -96,6 +96,14 @@ var (
 		maxArgs:     0,
 		usage:       "h2c stop",
 	}
+	WIRETAP_COMMAND = &command{
+		name: "wiretap",
+		description: "Forward HTTP/2 traffic and print captured frames to the console.\n" +
+			"The wiretap command listens on localhost:port and fowards all traffic to remotehost:port.",
+		minArgs: 2,
+		maxArgs: 2,
+		usage:   "h2c wiretap <localhost:port> <remotehost:port>\n",
+	}
 )
 
 func (c *command) Name() string {
@@ -112,6 +120,7 @@ var commands = []*command{
 	UNSET_COMMAND,
 	PID_COMMAND,
 	STOP_COMMAND,
+	WIRETAP_COMMAND,
 }
 
 type option struct {
@@ -193,7 +202,7 @@ var (
 		short:       "-h",
 		long:        "--help",
 		description: "Show this help message.",
-		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND},
+		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND, WIRETAP_COMMAND},
 		hasParam:    false,
 	}
 	DUMP_OPTION = &option{

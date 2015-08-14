@@ -54,7 +54,7 @@ func DecodeHeadersFrame(flags byte, streamId uint32, payload []byte, context *De
 	}
 	if priority {
 		payload, err = stripPriority(payload) // TODO: Priority ignored.
-		printBytes("Payload with stripped priority", payload)
+		// printBytes("Payload with stripped priority", payload)
 		if err != nil {
 			return nil, err
 		}

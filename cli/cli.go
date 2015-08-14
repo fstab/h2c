@@ -8,6 +8,7 @@ import (
 	"github.com/fstab/h2c/cli/cmdline"
 	"github.com/fstab/h2c/cli/daemon"
 	"github.com/fstab/h2c/cli/rpc"
+	"github.com/fstab/h2c/cli/wiretap"
 	"io"
 	"io/ioutil"
 	"os"
@@ -25,9 +26,12 @@ func Run() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if cmdline.START_COMMAND.Name() == cmd.Name {
+	switch cmd.Name {
+	case cmdline.START_COMMAND.Name():
 		return "", startDaemon(ipc, cmdline.DUMP_OPTION.IsSet(cmd.Options))
-	} else {
+	case cmdline.WIRETAP_COMMAND.Name():
+		return "", wiretap.Run(cmd.Args[0], cmd.Args[1])
+	default:
 		if !ipc.IsListening() {
 			if cmdline.STOP_COMMAND.Name() == cmd.Name {
 				return "", fmt.Errorf("h2c is not running.")
