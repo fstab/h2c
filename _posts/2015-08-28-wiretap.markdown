@@ -1,0 +1,23 @@
+---
+layout:   post
+title:    "Wiretapping HTTP/2 Traffic"
+date:     2015-08-28 12:41:47
+comments: true
+---
+
+[h2c](https://github.com/fstab/h2c) can now be used to analyze HTTP/2 traffic
+from any Web browser.
+
+![wiretap]({{site.url}}{{site.baseurl}}/assets/2015-08-28-wiretap.gif)
+
+### Example
+
+```bash
+h2c wiretap localhost:8443 example.com:443
+```
+
+This will listen for incoming connections on _localhost_ port 8443, and forward
+the HTTP/2 traffic to _example.com_. All traffic will be printed to the console.
+
+[h2c](https://github.com/fstab/h2c) is currently HTTPS only, plain text connections
+are not supported.
