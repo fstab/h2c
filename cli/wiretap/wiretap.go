@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/connection"
 	"github.com/fstab/h2c/http2client/frames"
+	"github.com/fstab/http2/hpack"
 	"io"
 	"net"
 	"os"
@@ -82,7 +83,7 @@ func Run(local string, remote string) error {
 			return err
 		}
 		go func() {
-			err := handleConnection(conn, remote, dumpIncoming, dumpOutgoing)
+			err := handleConnection(conn, local, remote, dumpIncoming, dumpOutgoing)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error while handling connection: %v\n", err.Error())
 			}
@@ -90,7 +91,7 @@ func Run(local string, remote string) error {
 	}
 }
 
-func handleConnection(conn net.Conn, remote string, dumpIncoming, dumpOutgoing chan frames.Frame) error {
+func handleConnection(conn net.Conn, local, remote string, dumpIncoming, dumpOutgoing chan frames.Frame) error {
 	clientConn, err := negotiateH2Protocol(conn)
 	if err != nil {
 		return err
@@ -103,8 +104,8 @@ func handleConnection(conn net.Conn, remote string, dumpIncoming, dumpOutgoing c
 	if err != nil {
 		return err
 	}
-	go forwardFrames(clientConn, serverConn, dumpOutgoing)
-	go forwardFrames(serverConn, clientConn, dumpIncoming)
+	go forwardFrames(clientConn, serverConn, remote, dumpOutgoing)
+	go forwardFrames(serverConn, clientConn, local, dumpIncoming)
 	return nil
 }
 
@@ -119,7 +120,7 @@ func dumpFrames(in chan frames.Frame, out chan frames.Frame) {
 	}
 }
 
-func forwardFrames(from net.Conn, to net.Conn, dump chan frames.Frame) {
+func forwardFrames(from net.Conn, to net.Conn, remoteAuthority string, dump chan frames.Frame) {
 	defer from.Close()
 	defer to.Close()
 	encodingContext := frames.NewEncodingContext()
@@ -131,6 +132,7 @@ func forwardFrames(from net.Conn, to net.Conn, dump chan frames.Frame) {
 			fmt.Fprintf(os.Stderr, "Closing connection.\n")
 			return
 		}
+		fixAuthorityHeader(frame, remoteAuthority)
 		dump <- frame
 		err = writeFrame(to, frame, encodingContext)
 		if err != nil {
@@ -138,6 +140,25 @@ func forwardFrames(from net.Conn, to net.Conn, dump chan frames.Frame) {
 			fmt.Fprintf(os.Stderr, "Closing connection.\n")
 			return
 		}
+	}
+}
+
+// The web browser will access https://localhost:8443, so it will set the :authority header to localhost.
+// We need to replace this with the remote host to get a valid request for the remote host.
+func fixAuthorityHeader(frame frames.Frame, remoteAuthority string) {
+	headersFrame, isHeaders := frame.(*frames.HeadersFrame)
+	if isHeaders {
+		fixedHeaders := make([]hpack.HeaderField, len(headersFrame.Headers))
+		for i, header := range headersFrame.Headers {
+			if header.Name == ":authority" {
+				header = hpack.HeaderField{
+					Name:  ":authority",
+					Value: remoteAuthority,
+				}
+			}
+			fixedHeaders[i] = header
+		}
+		headersFrame.Headers = fixedHeaders
 	}
 }
 
