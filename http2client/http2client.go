@@ -71,7 +71,7 @@ func (h2c *Http2Client) doRequest(method string, path string, data []byte, inclu
 	}
 	task := util.NewAsyncTask()
 	stream := h2c.conn.InitNewStream(task)
-	requestHeaders := makeHeaders(h2c.conn.Host(), method, path, "http2", h2c.customHeaders, data)
+	requestHeaders := makeHeaders(h2c.conn.Host(), method, path, "https", h2c.customHeaders, data)
 	headersFrame := frames.NewHeadersFrame(stream.StreamId(), requestHeaders)
 	headersFrame.EndStream = data == nil
 	err := stream.Write(headersFrame, timeoutInSeconds) // use same timeout for writing single frame and entire request
