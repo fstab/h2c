@@ -143,13 +143,31 @@ func forwardFrames(from net.Conn, to net.Conn, remoteAuthority string, dump chan
 	}
 }
 
+func getHeaders(headersFrame *frames.HeadersFrame, pushPromiseFrame *frames.PushPromiseFrame) []hpack.HeaderField {
+	if headersFrame != nil {
+		return headersFrame.Headers
+	} else {
+		return pushPromiseFrame.Headers
+	}
+}
+
+func setHeaders(headersFrame *frames.HeadersFrame, pushPromiseFrame *frames.PushPromiseFrame, headers []hpack.HeaderField) {
+	if headersFrame != nil {
+		headersFrame.Headers = headers
+	} else {
+		pushPromiseFrame.Headers = headers
+	}
+}
+
 // The web browser will access https://localhost:8443, so it will set the :authority header to localhost.
 // We need to replace this with the remote host to get a valid request for the remote host.
 func fixAuthorityHeader(frame frames.Frame, remoteAuthority string) {
 	headersFrame, isHeaders := frame.(*frames.HeadersFrame)
-	if isHeaders {
-		fixedHeaders := make([]hpack.HeaderField, len(headersFrame.Headers))
-		for i, header := range headersFrame.Headers {
+	pushPromiseFrame, isPushPromise := frame.(*frames.PushPromiseFrame)
+	if isHeaders || isPushPromise {
+		origHeaders := getHeaders(headersFrame, pushPromiseFrame)
+		fixedHeaders := make([]hpack.HeaderField, len(origHeaders))
+		for i, header := range origHeaders {
 			if header.Name == ":authority" {
 				header = hpack.HeaderField{
 					Name:  ":authority",
@@ -158,7 +176,7 @@ func fixAuthorityHeader(frame frames.Frame, remoteAuthority string) {
 			}
 			fixedHeaders[i] = header
 		}
-		headersFrame.Headers = fixedHeaders
+		setHeaders(headersFrame, pushPromiseFrame, fixedHeaders)
 	}
 }
 
