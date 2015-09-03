@@ -67,6 +67,8 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 		return executeGet(h2c, cmd)
 	case cmdline.POST_COMMAND.Name():
 		return executePost(h2c, cmd)
+	case cmdline.PUSH_LIST_COMMAND.Name():
+		return executePushList(h2c, cmd)
 	case cmdline.SET_COMMAND.Name():
 		return h2c.SetHeader(cmd.Args[0], cmd.Args[1])
 	case cmdline.UNSET_COMMAND.Name():
@@ -112,6 +114,10 @@ func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) 
 		timeout = 10
 	}
 	return h2c.Get(cmd.Args[0], includeHeaders, timeout)
+}
+
+func executePushList(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	return h2c.PushList()
 }
 
 func executePost(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {

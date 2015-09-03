@@ -14,7 +14,7 @@ import (
 )
 
 type Http2Client struct {
-	conn          *connection.Connection
+	conn          connection.Connection
 	customHeaders []hpack.HeaderField // filled with 'h2c set'
 	err           error               // if != nil, the Http2Client becomes unusable
 	dump          bool                // h2c start --dump
@@ -55,20 +55,53 @@ func (h2c *Http2Client) Disconnect() (string, error) {
 }
 
 func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds int) (string, error) {
-	return h2c.doRequest("GET", path, nil, includeHeaders, timeoutInSeconds)
-}
-
-func (h2c *Http2Client) Post(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
-	return h2c.doRequest("POST", path, data, includeHeaders, timeoutInSeconds)
-}
-
-func (h2c *Http2Client) doRequest(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
 	}
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected.")
 	}
+	stream := h2c.conn.FetchPromisedStream("GET", path)
+	if stream != nil {
+		// Don't need to send request, because PUSH_PROMISE for this request already arrived.
+		task := util.NewAsyncTask()
+		stream.SetOnClosedCallback(task)
+		return waitForResponse(task, stream, includeHeaders, timeoutInSeconds)
+	} else {
+		return h2c.doRequest("GET", path, nil, includeHeaders, timeoutInSeconds)
+	}
+}
+
+func (h2c *Http2Client) Post(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
+	if h2c.err != nil {
+		return "", h2c.err
+	}
+	if !h2c.isConnected() {
+		return "", fmt.Errorf("Not connected.")
+	}
+	return h2c.doRequest("POST", path, data, includeHeaders, timeoutInSeconds)
+}
+
+func (h2c *Http2Client) PushList() (string, error) {
+	if h2c.err != nil {
+		return "", h2c.err
+	}
+	if !h2c.isConnected() {
+		return "", fmt.Errorf("Not connected.")
+	}
+	result := ""
+	first := true
+	for _, path := range h2c.conn.GetPromisedPaths() {
+		if !first {
+			result = result + "\n"
+		}
+		result = result + "get " + path
+		first = false
+	}
+	return result, nil
+}
+
+func (h2c *Http2Client) doRequest(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	task := util.NewAsyncTask()
 	stream := h2c.conn.InitNewStream(task)
 	requestHeaders := makeHeaders(h2c.conn.Host(), method, path, "https", h2c.customHeaders, data)
@@ -84,7 +117,11 @@ func (h2c *Http2Client) doRequest(method string, path string, data []byte, inclu
 			return "", err
 		}
 	}
-	err = task.WaitForCompletion(timeoutInSeconds)
+	return waitForResponse(task, stream, includeHeaders, timeoutInSeconds)
+}
+
+func waitForResponse(task *util.AsyncTask, stream connection.Stream, includeHeaders bool, timeoutInSeconds int) (string, error) {
+	err := task.WaitForCompletion(timeoutInSeconds)
 	if err != nil {
 		return "", fmt.Errorf("Error while waiting for response: %v", err.Error())
 	}
@@ -134,7 +171,7 @@ func min(a, b uint32) uint32 {
 	return b
 }
 
-func (h2c *Http2Client) sendDataFrames(data []byte, stream *connection.Stream, timeoutPerFrameInSeconds int) error {
+func (h2c *Http2Client) sendDataFrames(data []byte, stream connection.Stream, timeoutPerFrameInSeconds int) error {
 	// chunkSize := uint32(len(data)) // use this to provoke GOAWAY frame with FRAME_SIZE_ERROR
 	chunkSize := h2c.conn.ServerFrameSize() // TODO: Query chunk size with each iteration -> allow changes during loop
 	nChunksSent := uint32(0)

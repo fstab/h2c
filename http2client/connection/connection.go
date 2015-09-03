@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/util"
+	"github.com/fstab/http2/hpack"
 	"io"
 	"net"
 	"os"
@@ -12,13 +13,25 @@ import (
 
 const CLIENT_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
-type Connection struct {
+type Connection interface {
+	Host() string
+	Port() int
+	IsShutdown() bool
+	Shutdown()
+	InitNewStream(onClosed *util.AsyncTask) Stream
+	ServerFrameSize() uint32
+	GetPromisedPaths() []string
+	FetchPromisedStream(method, path string) Stream
+}
+
+type connection struct {
 	in                         chan frames.Frame
 	out                        chan *writeFrameRequest
 	shutdown                   chan bool
 	info                       *info
 	settings                   *settings
-	streams                    map[uint32]*Stream // StreamID -> *stream
+	streams                    map[uint32]*stream         // StreamID -> *stream
+	promisedStreamIDs          map[promisedRequest]uint32 // Push Promise -> StreamID
 	conn                       net.Conn
 	dump                       bool
 	isShutdown                 bool
@@ -26,6 +39,11 @@ type Connection struct {
 	decodingContext            *frames.DecodingContext
 	remainingSendWindowSize    int64
 	remainingReceiveWindowSize int64
+}
+
+type promisedRequest struct {
+	method string // "GET"
+	path   string // "/index.html"
 }
 
 type info struct {
@@ -44,7 +62,7 @@ type writeFrameRequest struct {
 	task  *util.AsyncTask
 }
 
-func Start(host string, port int, dump bool) (*Connection, error) {
+func Start(host string, port int, dump bool) (Connection, error) {
 	hostAndPort := fmt.Sprintf("%v:%v", host, port)
 	conn, err := tls.Dial("tcp", hostAndPort, &tls.Config{
 		InsecureSkipVerify: true,
@@ -76,16 +94,36 @@ func Start(host string, port int, dump bool) (*Connection, error) {
 	return c, nil
 }
 
-func (c *Connection) Shutdown() {
+func (c *connection) Shutdown() {
 	c.shutdown <- true
 }
 
-func (c *Connection) IsShutdown() bool {
+func (c *connection) IsShutdown() bool {
 	return c.isShutdown
 }
 
-func newConnection(conn net.Conn, host string, port int, dump bool) *Connection {
-	return &Connection{
+func (c *connection) GetPromisedPaths() []string {
+	result := make([]string, len(c.promisedStreamIDs))
+	i := 0
+	for k := range c.promisedStreamIDs {
+		result[i] = k.path
+		i = i + 1
+	}
+	return result
+}
+
+func (c *connection) FetchPromisedStream(method, path string) Stream {
+	streamId, exists := c.promisedStreamIDs[promisedRequest{method, path}]
+	if exists {
+		delete(c.promisedStreamIDs, promisedRequest{method, path})
+		return c.streams[streamId]
+	} else {
+		return nil
+	}
+}
+
+func newConnection(conn net.Conn, host string, port int, dump bool) *connection {
+	return &connection{
 		in:       make(chan frames.Frame),
 		out:      make(chan *writeFrameRequest),
 		shutdown: make(chan bool),
@@ -98,7 +136,8 @@ func newConnection(conn net.Conn, host string, port int, dump bool) *Connection 
 			initialSendWindowSizeForNewStreams:    2<<15 - 1, // Initial flow-control window size for new streams is 65,535 octets.
 			initialReceiveWindowSizeForNewStreams: 2<<15 - 1,
 		},
-		streams:                    make(map[uint32]*Stream),
+		streams:                    make(map[uint32]*stream),
+		promisedStreamIDs:          make(map[promisedRequest]uint32),
 		isShutdown:                 false,
 		conn:                       conn,
 		dump:                       dump,
@@ -110,7 +149,7 @@ func newConnection(conn net.Conn, host string, port int, dump bool) *Connection 
 }
 
 // Frame processing loop. This makes sure that all frames are handled sequentially in a single thread.
-func (c *Connection) runFrameHandlerLoop() {
+func (c *connection) runFrameHandlerLoop() {
 	for {
 		select {
 		case incomingFrame := <-c.in:
@@ -126,7 +165,7 @@ func (c *Connection) runFrameHandlerLoop() {
 }
 
 // Read frames from network socket and provide them to c.in channel
-func (c *Connection) runIncomingFrameReader() {
+func (c *connection) runIncomingFrameReader() {
 	for {
 		frame, err := c.readNextFrame()
 		if c.isShutdown {
@@ -143,7 +182,7 @@ func (c *Connection) runIncomingFrameReader() {
 	}
 }
 
-func (c *Connection) handleIncomingFrame(frame frames.Frame) {
+func (c *connection) handleIncomingFrame(frame frames.Frame) {
 	switch frame := frame.(type) {
 	case *frames.SettingsFrame:
 		c.settings.handleSettingsFrame(frame)
@@ -167,6 +206,24 @@ func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 		if frame.EndStream {
 			stream.endStream()
 		}
+	case *frames.PushPromiseFrame:
+		method := findHeader(":method", frame.Headers)
+		path := findHeader(":path", frame.Headers)
+		if method != "GET" {
+			fmt.Fprintf(os.Stderr, "ERROR: PUSH_PROMISE with method %v not supported.", method)
+			return
+		}
+		_, exists := c.streams[frame.PromisedStreamId]
+		if exists {
+			fmt.Fprintf(os.Stderr, "ERROR: Received PUSH_PROMISE for existing stream %v", frame.PromisedStreamId)
+			return
+		}
+		if !frame.EndHeaders {
+			fmt.Fprintf(os.Stderr, "ERROR: Push promise with multiple header frames not supported.")
+			return
+		}
+		c.getOrCreateStream(frame.PromisedStreamId)
+		c.promisedStreamIDs[promisedRequest{method, path}] = frame.PromisedStreamId
 	case *frames.RstStreamFrame:
 		stream, exists := c.streams[frame.GetStreamId()]
 		if !exists {
@@ -188,9 +245,18 @@ func (c *Connection) handleIncomingFrame(frame frames.Frame) {
 	}
 }
 
+func findHeader(name string, headers []hpack.HeaderField) string {
+	for _, header := range headers {
+		if header.Name == name {
+			return header.Value
+		}
+	}
+	return ""
+}
+
 // Just a quick implementation to make large downloads work.
 // Should be replaced with a more sophisticated flow control strategy
-func (c *Connection) flowControlForIncomingDataFrame(frame *frames.DataFrame, stream *Stream) {
+func (c *connection) flowControlForIncomingDataFrame(frame *frames.DataFrame, stream *stream) {
 	threshold := int64(2 << 13) // size of one frame
 	stream.remainingReceiveWindowSize -= int64(len(frame.Data))
 	if stream.remainingReceiveWindowSize < threshold {
@@ -232,7 +298,7 @@ func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
 	// TODO: Implement other settings, like HEADER_TABLE_SIZE.
 }
 
-func (c *Connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
+func (c *connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
 	if frame.StreamId == 0 {
 		c.remainingSendWindowSize += int64(frame.WindowSizeIncrement)
 	} else {
@@ -244,7 +310,7 @@ func (c *Connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
 	c.processPendingDataFrames()
 }
 
-func (c *Connection) handleOutgoingFrame(req *writeFrameRequest) {
+func (c *connection) handleOutgoingFrame(req *writeFrameRequest) {
 	_, isDataFrame := req.frame.(*frames.DataFrame)
 	if isDataFrame {
 		// This is called through stream.Write() so we know that the stream with that id exists.
@@ -255,7 +321,7 @@ func (c *Connection) handleOutgoingFrame(req *writeFrameRequest) {
 	}
 }
 
-func (c *Connection) writeImmediately(req *writeFrameRequest) {
+func (c *connection) writeImmediately(req *writeFrameRequest) {
 	encodedFrame, err := req.frame.Encode(c.encodingContext)
 	if err != nil {
 		req.task.CompleteWithError(fmt.Errorf("Failed to write frame: %v", err.Error()))
@@ -273,7 +339,7 @@ func (c *Connection) writeImmediately(req *writeFrameRequest) {
 // onFlowControlEvent is called when:
 // a) a new data frame is scheduled for writing
 // b) the flow control window size has changed
-func (c *Connection) processPendingDataFrames() {
+func (c *connection) processPendingDataFrames() {
 	for _, s := range c.streams {
 		req := s.firstPendingDataFrameWrite()
 		if req != nil {
@@ -288,7 +354,7 @@ func (c *Connection) processPendingDataFrames() {
 	}
 }
 
-func (c *Connection) getOrCreateStream(streamId uint32) *Stream {
+func (c *connection) getOrCreateStream(streamId uint32) *stream {
 	stream, ok := c.streams[streamId]
 	if !ok {
 		stream = newStream(streamId, nil, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c.out)
@@ -297,12 +363,12 @@ func (c *Connection) getOrCreateStream(streamId uint32) *Stream {
 	return stream
 }
 
-func (c *Connection) GetStreamIfExists(streamId uint32) (*Stream, bool) {
+func (c *connection) GetStreamIfExists(streamId uint32) (*stream, bool) {
 	stream, exists := c.streams[streamId]
 	return stream, exists
 }
 
-func (c *Connection) InitNewStream(onClosed *util.AsyncTask) *Stream {
+func (c *connection) InitNewStream(onClosed *util.AsyncTask) Stream {
 	// Streams initiated by the client must use odd-numbered stream identifiers.
 	streamIdsInUse := make([]uint32, len(c.streams))
 	for id, _ := range c.streams {
@@ -331,23 +397,23 @@ func max(numbers []uint32) uint32 {
 	return result
 }
 
-func (c *Connection) ServerFrameSize() uint32 {
+func (c *connection) ServerFrameSize() uint32 {
 	return c.settings.serverFrameSize
 }
 
-func (c *Connection) SetServerFrameSize(size uint32) {
+func (c *connection) SetServerFrameSize(size uint32) {
 	c.settings.serverFrameSize = size
 }
 
-func (c *Connection) Host() string {
+func (c *connection) Host() string {
 	return c.info.host
 }
 
-func (c *Connection) Port() int {
+func (c *connection) Port() int {
 	return c.info.port
 }
 
-func (c *Connection) readNextFrame() (frames.Frame, error) {
+func (c *connection) readNextFrame() (frames.Frame, error) {
 	headerData := make([]byte, 9) // Frame starts with a 9 Bytes header
 	_, err := io.ReadFull(c.conn, headerData)
 	if err != nil {

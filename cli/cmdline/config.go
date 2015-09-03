@@ -89,6 +89,13 @@ var (
 		maxArgs:     0,
 		usage:       "h2c pid",
 	}
+	PUSH_LIST_COMMAND = &command{
+		name:        "push-list",
+		description: "List responses that are available as push promises.",
+		minArgs:     0,
+		maxArgs:     0,
+		usage:       "h2c push-list",
+	}
 	STOP_COMMAND = &command{
 		name:        "stop",
 		description: "Stop the h2c process.",
@@ -119,6 +126,7 @@ var commands = []*command{
 	SET_COMMAND,
 	UNSET_COMMAND,
 	PID_COMMAND,
+	PUSH_LIST_COMMAND,
 	STOP_COMMAND,
 	WIRETAP_COMMAND,
 }
@@ -202,7 +210,7 @@ var (
 		short:       "-h",
 		long:        "--help",
 		description: "Show this help message.",
-		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND, WIRETAP_COMMAND},
+		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND, PUSH_LIST_COMMAND, WIRETAP_COMMAND},
 		hasParam:    false,
 	}
 	DUMP_OPTION = &option{
