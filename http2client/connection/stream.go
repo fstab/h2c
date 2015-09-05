@@ -4,51 +4,47 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
-	"github.com/fstab/h2c/http2client/util"
+	"github.com/fstab/h2c/http2client/message"
 	"github.com/fstab/http2/hpack"
-	"os"
 )
 
 type Stream interface {
 	StreamId() uint32
-	Write(frame frames.Frame, timeoutInSeconds int) error
-	Error() error
-	ReceivedHeaders() map[string]string
+	//	ReceivedHeaders() map[string]string
 	ReceivedData() []byte
-	SetOnClosedCallback(onClosed *util.AsyncTask)
+	AssociateWithRequest(request message.HttpRequest) error
+	scheduleDataFrameWrite(frame *frames.DataFrame)
 }
 
 type stream struct {
-	receivedHeaders            map[string]string // TODO: Does not allow multiple headers with same name
+	receivedHeaders            []hpack.HeaderField
 	receivedData               bytes.Buffer
 	err                        error // RST_STREAM received
 	isClosed                   bool
-	onClosed                   *util.AsyncTask
+	request                    message.HttpRequest
 	remainingSendWindowSize    int64
 	remainingReceiveWindowSize int64
-	pendingDataFrameWrites     []*writeFrameRequest // only touched in the single threaded frame processing loop
+	pendingDataFrameWrites     []*frames.DataFrame
 	streamId                   uint32
-	out                        chan *writeFrameRequest
 }
 
-func newStream(streamId uint32, onClosed *util.AsyncTask, initialSendWindowSize uint32, initialReceiveWindowSize uint32, out chan *writeFrameRequest) *stream {
+func newStream(streamId uint32, request message.HttpRequest, initialSendWindowSize uint32, initialReceiveWindowSize uint32) *stream {
 	return &stream{
-		receivedHeaders:            make(map[string]string),
+		receivedHeaders:            make([]hpack.HeaderField, 0),
 		streamId:                   streamId,
 		isClosed:                   false,
-		onClosed:                   onClosed,
+		request:                    request,
 		remainingSendWindowSize:    int64(initialSendWindowSize),
 		remainingReceiveWindowSize: int64(initialReceiveWindowSize),
-		pendingDataFrameWrites:     make([]*writeFrameRequest, 0),
-		out: out,
+		pendingDataFrameWrites:     make([]*frames.DataFrame, 0),
 	}
 }
 
-func (s *stream) scheduleDataFrameWrite(frame *writeFrameRequest) {
+func (s *stream) scheduleDataFrameWrite(frame *frames.DataFrame) {
 	s.pendingDataFrameWrites = append(s.pendingDataFrameWrites, frame)
 }
 
-func (s *stream) firstPendingDataFrameWrite() *writeFrameRequest {
+func (s *stream) firstPendingDataFrameWrite() *frames.DataFrame {
 	if len(s.pendingDataFrameWrites) > 0 {
 		return s.pendingDataFrameWrites[0]
 	}
@@ -56,15 +52,15 @@ func (s *stream) firstPendingDataFrameWrite() *writeFrameRequest {
 }
 
 // called after firstPendingDataFrame() returned != nil, so we know len(s.pendingDataFrames) > 0
-func (s *stream) popFirstPendingDataFrameWrite() *writeFrameRequest {
+func (s *stream) popFirstPendingDataFrameWrite() *frames.DataFrame {
 	result := s.pendingDataFrameWrites[0]
-	s.pendingDataFrameWrites = s.pendingDataFrameWrites[1:]
+	s.pendingDataFrameWrites = s.pendingDataFrameWrites[1:] // TODO: Will pendingDataFrameWrites[0] ever get free() ?
 	return result
 }
 
 func (s *stream) addReceivedHeaders(headers ...hpack.HeaderField) {
 	for _, header := range headers {
-		s.receivedHeaders[header.Name] = header.Value
+		s.receivedHeaders = append(s.receivedHeaders, header)
 	}
 }
 
@@ -74,21 +70,22 @@ func (s *stream) appendReceivedData(data []byte) {
 
 func (s *stream) endStream() {
 	s.isClosed = true
-	if s.onClosed != nil {
-		s.onClosed.CompleteSuccessfully()
+	if s.request != nil {
+		s.request.CompleteSuccessfully(s.makeResponse())
 	}
 }
 
-func (s *stream) Error() error {
-	return s.err
+func (s *stream) makeResponse() message.HttpResponse {
+	resp := message.NewResponse()
+	for _, header := range s.receivedHeaders {
+		resp.AddHeader(header.Name, header.Value)
+	}
+	resp.AddData(s.receivedData.Bytes(), false)
+	return resp
 }
 
 func (s *stream) setError(err error) {
 	s.err = err
-}
-
-func (s *stream) ReceivedHeaders() map[string]string {
-	return s.receivedHeaders
 }
 
 func (s *stream) ReceivedData() []byte {
@@ -99,29 +96,15 @@ func (s *stream) StreamId() uint32 {
 	return s.streamId
 }
 
-func (s *stream) Write(frame frames.Frame, timeoutInSeconds int) error {
-	if frame.GetStreamId() != s.streamId {
-		return fmt.Errorf("Tried to write frame with stream id %v to stream with id %v. This is a bug.", frame.GetStreamId(), s.streamId)
+func (s *stream) AssociateWithRequest(request message.HttpRequest) error {
+	if s.request != nil {
+		return fmt.Errorf("Trying to set more than one request for a stream.")
 	}
-	task := util.NewAsyncTask()
-	s.out <- &writeFrameRequest{
-		task:  task,
-		frame: frame,
-	}
-	return task.WaitForCompletion(timeoutInSeconds)
-}
-
-func (s *stream) SetOnClosedCallback(onClosed *util.AsyncTask) {
-	if s.onClosed != nil {
-		fmt.Fprintf(os.Stderr, "Trying to set more than one onClosed callback for a stream. This is a bug.")
-		os.Exit(-1)
-	}
-	// This is not thread safe. What if the stream gets closed after we check IsClosed but before we set onClosed?
-	if s.Error() != nil {
-		onClosed.CompleteWithError(s.Error())
+	s.request = request
+	if s.err != nil {
+		s.request.CompleteWithError(s.err)
 	} else if s.isClosed {
-		onClosed.CompleteSuccessfully()
-	} else {
-		s.onClosed = onClosed
+		s.request.CompleteSuccessfully(s.makeResponse())
 	}
+	return nil
 }
