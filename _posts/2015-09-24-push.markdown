@@ -41,7 +41,7 @@ because the response is already available on the client.
 h2c push-list
 -------------
 
-Using the [h2c][5] command line client, the demo can be tried as follows:
+Using the [h2c][5] command line client, the demo can be run as follows:
 
 In one terminal, run `h2c start --dump`.
 
