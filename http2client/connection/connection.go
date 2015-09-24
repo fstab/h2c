@@ -352,7 +352,6 @@ func (c *connection) processPendingDataFrames() {
 				if c.remainingSendWindowSize >= nBytes && s.remainingSendWindowSize >= nBytes {
 					c.remainingSendWindowSize -= nBytes
 					s.remainingSendWindowSize -= nBytes
-					fmt.Printf("Sending data frame of %v bytes.\nRemaining window size in connection is %v bytes.\nRemaining window size in stream is %v bytes.\n", nBytes, c.remainingSendWindowSize, s.remainingSendWindowSize)
 					s.popFirstPendingDataFrameWrite()
 					c.writeImmediately(frame)
 					frameSent = true
