@@ -12,9 +12,9 @@ from any Web browser.
 
 ### Example
 
-```bash
+{% highlight bash %}
 h2c wiretap localhost:8443 example.com:443
-```
+{% endhighlight %}
 
 This will listen for incoming connections on _localhost_ port 8443, and forward
 the HTTP/2 traffic to _example.com_. All traffic will be printed to the console.
