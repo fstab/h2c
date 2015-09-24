@@ -1,0 +1,77 @@
+---
+layout:   post
+title:    "Server Push"
+date:     2015-09-23 17:20:47
+comments: true
+---
+
+An HTTP/2 server may send responses to a client without waiting for the request.
+
+This is typically used in Web page scenarios: If a server receives a request to `/index.html`,
+the server knows that the client will most probably request all included image, CSS, and JavaScript files.
+Instead of waiting for these requests, the server may proactively create [push requests][1] for these resources,
+and send responses immediately.
+
+Push Echo Servlet Demo
+----------------------
+
+As a demo, I created a [push echo Servlet][2], which can be downloaded and built as follows:
+
+{% highlight bash %}
+git clone https://github.com/fstab/http2-examples
+cd http2-examples/jetty-http2-echo-server
+mvn package
+{% endhighlight %}
+
+In order to run it, you need to find out the [correct ALPN version for your JDK][3]
+_(see table 14.1)_, and download the [ALPN boot JAR from Maven Central][4].
+Given the correct `<path-to-alpn-boot.jar>`, run the demo as follows:
+
+{% highlight bash %}
+java -Xbootclasspath/p:<path-to-alpn-boot.jar> \
+    -jar target/jetty-http2-echo-server.jar
+{% endhighlight %}
+
+The demo is an echo Servlet: You can POST data to `/data`, and then GET that data from `/data`.
+
+However, the GET request is implemented as a [Server Push][1].
+The GET request does not perform actual network traffic,
+because the response is already available on the client.
+
+h2c push-list
+-------------
+
+Using the [h2c][5] command line client, the demo can be tried as follows:
+
+In one terminal, run `h2c start --dump`.
+
+In another terminal, run
+
+{% highlight bash %}
+h2c connect localhost:8443
+h2c post --data 'hello world' /data
+h2c get /data
+{% endhighlight %}
+
+The GET request will return the message `I received the following data: hello world`.
+
+In the other h2c terminal, the dumped traffic shows that the GET request is never sent,
+because it is anticipated by the server as a [PUSH_PROMISE][6].
+
+![Push Demo Traffic]({{site.url}}{{site.baseurl}}/assets/2015-09-23-push.png)
+
+Using `h2c push-list`, you can view which paths are currently available as pushed responses in the client:
+
+{% highlight bash %}
+h2c post --data 'hello world' /data
+h2c push-list
+{% endhighlight %}
+
+The commands above will show the path `/data`, meaning that the next GET request to `/data` will be responded locally with the available push response.
+
+[1]: https://httpwg.github.io/specs/rfc7540.html#PushResources
+[2]: https://github.com/fstab/http2-examples/tree/master/jetty-http2-echo-server
+[3]: http://www.eclipse.org/jetty/documentation/current/alpn-chapter.html
+[4]: http://repo1.maven.org/maven2/org/mortbay/jetty/alpn/alpn-boot/
+[5]: https://github.com/fstab/h2c
+[6]: https://httpwg.github.io/specs/rfc7540.html#PUSH_PROMISE
