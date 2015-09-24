@@ -60,7 +60,8 @@ because it is anticipated by the server as a [PUSH_PROMISE][6].
 
 ![Push Demo Traffic]({{site.url}}{{site.baseurl}}/assets/2015-09-23-push.png)
 
-Using `h2c push-list`, you can view which paths are currently available as pushed responses in the client:
+Using `h2c push-list`, you can view which paths are currently available as pushed responses on the client.
+Once a path is fetched with `h2c get`, the pused path is will be removed from the list.
 
 {% highlight bash %}
 h2c post --data 'hello world' /data
