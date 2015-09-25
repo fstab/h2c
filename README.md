@@ -6,7 +6,7 @@ h2c - A Simple HTTP/2 Command-Line Client
 While `curl` terminates after each request/response cycle, `h2c` runs a background process to keep connections open.
 That way, `h2c` may receive asynchronous [push](https://httpwg.github.io/specs/rfc7540.html#PushResources) messages from the server.
 
-`h2c` is currently in a very early stage. The best way to learn about it is to read the blog posts on [http://unrestful.io](http://unrestful.io).
+`h2c` is currently in a very early stage. The best way to learn about it is to read the blog posts on [unrestful.io](http://unrestful.io).
 
 Screenshots
 -----------
@@ -47,7 +47,7 @@ How to Download and Run
 
 Binary releases are available on the [GitHub Releases](https://github.com/fstab/h2c/releases).
 
-1. Download the latest release ZIP file: [h2c-v0.0.7.zip](https://github.com/fstab/h2c/releases/download/v0.0.7/h2c-v0.0.7.zip)
+1. Download the latest release ZIP file: [h2c-v0.0.8.zip](https://github.com/fstab/h2c/releases/download/v0.0.8/h2c-v0.0.8.zip)
 2. Extract the ZIP file
 3. Find the executable for your system in the `bin` folder:
   * Linux: `h2c_linux_amd64`
