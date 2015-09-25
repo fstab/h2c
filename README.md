@@ -1,26 +1,46 @@
-h2c - A Simple Command-Line HTTP/2 Client
+h2c - A Simple HTTP/2 Command-Line Client
 -----------------------------------------
 
-`h2c` is a simple command-line client for HTTP/2 servers.
+`h2c` is a simple HTTP/2 command-line client, like `curl`.
 
-It is currently in a very early stage. The best way to learn about it is to read the blog posts on [http://blog.http2client.net](http://blog.http2client.net).
+While `curl` terminates after each request/response cycle, `h2c` runs a background process to keep connections open.
+That way, `h2c` may receive asynchronous [push](https://httpwg.github.io/specs/rfc7540.html#PushResources) messages from the server.
+
+`h2c` is currently in a very early stage. The best way to learn about it is to read the blog posts on [http://unrestful.io](http://unrestful.io).
 
 Screenshots
 -----------
 
 ![h2c dump](doc/h2c-dump.png)
 
-![h2c commandline](doc/h2c-cmdline.png)
+![h2c command line](doc/h2c-cmdline.png)
 
 Basic Usage
 -----------
 
 ```bash
 h2c start &
-h2c connect 127.0.0.1:443
+h2c connect http2.akamai.com
 h2c get /index.html
 h2c stop
 ```
+
+Command Overview
+----------------
+
+For a complete list of available commands, run `h2c --help`.
+
+* `h2c start [options]` Start the h2c process. The h2c process must be started before running any other command.
+* `h2c connect [options] <host>:<port>` Connect to a server using https
+* `h2c disconnect` Disconnect from server
+* `h2c get [options] <path>` Perform a GET request
+* `h2c post [options] <path>` Perform a POST request
+* `h2c set <header-name> <header-value>` Set a header. The header will be valid for all subsequent requests.
+* `h2c unset <header-name> [<header-value>]` Undo 'h2c set'.
+* `h2c pid` Show the process id of the h2c process.
+* `h2c push-list` List responses that are available as push promises.
+* `h2c stop` Stop the h2c process
+* `h2c wiretap <localhost:port> <remotehost:port>` Listen on localhost:port and forward all traffic to remotehost:port.
 
 How to Download and Run
 -----------------------
