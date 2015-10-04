@@ -49,6 +49,16 @@ var (
 		},
 		usage: "h2c get [options] <path>",
 	}
+	PUT_COMMAND = &command{
+		name:        "put",
+		description: "Perform a PUT request.",
+		minArgs:     1,
+		maxArgs:     1,
+		areArgsValid: func(args []string) bool {
+			return true
+		},
+		usage: "h2c put [options] <path>",
+	}
 	POST_COMMAND = &command{
 		name:        "post",
 		description: "Perform a POST request.",
@@ -122,6 +132,7 @@ var commands = []*command{
 	CONNECT_COMMAND,
 	DISCONNECT_COMMAND,
 	GET_COMMAND,
+	PUT_COMMAND,
 	POST_COMMAND,
 	SET_COMMAND,
 	UNSET_COMMAND,
@@ -163,14 +174,14 @@ var (
 		short:       "-i",
 		long:        "--include",
 		description: "Show response headers in the output.",
-		commands:    []*command{GET_COMMAND, POST_COMMAND},
+		commands:    []*command{GET_COMMAND, PUT_COMMAND, POST_COMMAND},
 		hasParam:    false,
 	}
 	TIMEOUT_OPTION = &option{
 		short:       "-t",
 		long:        "--timeout",
 		description: "Timeout in seconds while waiting for response.",
-		commands:    []*command{GET_COMMAND, POST_COMMAND},
+		commands:    []*command{GET_COMMAND, PUT_COMMAND, POST_COMMAND},
 		hasParam:    true,
 		isParamValid: func(param string) bool {
 			return regexp.MustCompile("^[0-9]+$").MatchString(param)
@@ -180,7 +191,7 @@ var (
 		short:       "-c",
 		long:        "--content-type",
 		description: "Value of the Content-Type header.",
-		commands:    []*command{POST_COMMAND},
+		commands:    []*command{PUT_COMMAND, POST_COMMAND},
 		hasParam:    true,
 		isParamValid: func(param string) bool {
 			return true
@@ -190,7 +201,7 @@ var (
 		short:       "-d",
 		long:        "--data",
 		description: "The data to be sent. May not be used when --file is present.",
-		commands:    []*command{POST_COMMAND},
+		commands:    []*command{PUT_COMMAND, POST_COMMAND},
 		hasParam:    true,
 		isParamValid: func(param string) bool {
 			return true
@@ -200,7 +211,7 @@ var (
 		short:       "-f",
 		long:        "--file",
 		description: "Post the content of file. Use '--file -' to read from stdin.",
-		commands:    []*command{POST_COMMAND},
+		commands:    []*command{PUT_COMMAND, POST_COMMAND},
 		hasParam:    true,
 		isParamValid: func(param string) bool {
 			return true
@@ -210,7 +221,7 @@ var (
 		short:       "-h",
 		long:        "--help",
 		description: "Show this help message.",
-		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND, PUSH_LIST_COMMAND, WIRETAP_COMMAND},
+		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, PUT_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND, PUSH_LIST_COMMAND, WIRETAP_COMMAND},
 		hasParam:    false,
 	}
 	DUMP_OPTION = &option{

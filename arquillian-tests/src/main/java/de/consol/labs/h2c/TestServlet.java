@@ -49,13 +49,25 @@ public class TestServlet extends HttpServlet {
 
     // Mapped to https://localhost:8443/h2c/test
     @Override
+    protected void doPut(final HttpServletRequest req, final HttpServletResponse resp) throws ServletException, IOException {
+        int i = 0;
+        while (req.getReader().read() != -1) {
+            i++;
+        }
+        PrintWriter writer = resp.getWriter();
+        writer.write("Received put request with " + i + " characters payload.\n");
+        writer.close();
+    }
+
+    // Mapped to https://localhost:8443/h2c/test
+    @Override
     protected void doPost(final HttpServletRequest req, final HttpServletResponse resp) throws ServletException, IOException {
         int i = 0;
         while (req.getReader().read() != -1) {
             i++;
         }
         PrintWriter writer = resp.getWriter();
-        writer.write("Received " + i + " characters.\n");
+        writer.write("Received post request with " + i + " characters payload.\n");
         writer.close();
     }
 }

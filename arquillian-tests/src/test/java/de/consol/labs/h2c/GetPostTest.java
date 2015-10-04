@@ -81,10 +81,18 @@ public class GetPostTest {
     }
 
     @Test
+    public void testPut() throws IOException, InterruptedException {
+        File dataFile = makeTmpFile(24);
+        H2c result = H2c.runWithTimeout(format("put --file %s %s", dataFile.getAbsolutePath(), path), 1);
+        assertTrue("Unexpected output: " + result.getStdout(), result.getStdout().contains("Received put request with " + 24 + " characters payload."));
+        assertTrue(dataFile.delete());
+    }
+
+    @Test
     public void testPost() throws IOException, InterruptedException {
         File dataFile = makeTmpFile(27);
         H2c result = H2c.runWithTimeout(format("post --file %s %s", dataFile.getAbsolutePath(), path), 1);
-        assertTrue(result.getStdout().contains("Received " + 27 + " characters."));
+        assertTrue("Unexpected output: " + result.getStdout(), result.getStdout().contains("Received post request with " + 27 + " characters payload."));
         assertTrue(dataFile.delete());
     }
 
@@ -96,7 +104,7 @@ public class GetPostTest {
     public void testPostFlowControl() throws IOException, InterruptedException {
         File dataFile = makeTmpFile(65000);
         H2c result = H2c.runWithTimeout(format("post --file %s %s", dataFile.getAbsolutePath(), path), 1);
-        assertTrue(result.getStdout().contains("Received " + 65000 + " characters."));
+        assertTrue("Unexpected output: " + result.getStdout(), result.getStdout().contains("Received post request with " + 65000 + " characters payload."));
         assertTrue(dataFile.delete());
     }
 }

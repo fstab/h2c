@@ -79,14 +79,22 @@ func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds i
 	return result, nil
 }
 
+func (h2c *Http2Client) Put(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
+	return h2c.putOrPost("PUT", path, data, includeHeaders, timeoutInSeconds)
+}
+
 func (h2c *Http2Client) Post(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
+	return h2c.putOrPost("POST", path, data, includeHeaders, timeoutInSeconds)
+}
+
+func (h2c *Http2Client) putOrPost(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
 	}
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected.")
 	}
-	request := message.NewRequest("POST", "https", h2c.loop.Host, path)
+	request := message.NewRequest(method, "https", h2c.loop.Host, path)
 	for _, header := range h2c.customHeaders {
 		request.AddHeader(header.Name, header.Value)
 	}

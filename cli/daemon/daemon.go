@@ -65,6 +65,8 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 		return strconv.Itoa(os.Getpid()), nil
 	case cmdline.GET_COMMAND.Name():
 		return executeGet(h2c, cmd)
+	case cmdline.PUT_COMMAND.Name():
+		return executePut(h2c, cmd)
 	case cmdline.POST_COMMAND.Name():
 		return executePost(h2c, cmd)
 	case cmdline.PUSH_LIST_COMMAND.Name():
@@ -120,7 +122,15 @@ func executePushList(h2c *http2client.Http2Client, cmd *rpc.Command) (string, er
 	return h2c.PushList()
 }
 
+func executePut(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	return executePutOrPost(h2c, cmd, h2c.Put)
+}
+
 func executePost(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	return executePutOrPost(h2c, cmd, h2c.Post)
+}
+
+func executePutOrPost(h2c *http2client.Http2Client, cmd *rpc.Command, putOrPost func(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error)) (string, error) {
 	includeHeaders := cmdline.INCLUDE_OPTION.IsSet(cmd.Options)
 	var timeout int
 	var err error
@@ -136,7 +146,7 @@ func executePost(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error)
 	if cmdline.DATA_OPTION.IsSet(cmd.Options) {
 		data = []byte(cmdline.DATA_OPTION.Get(cmd.Options))
 	}
-	return h2c.Post(cmd.Args[0], data, includeHeaders, timeout)
+	return putOrPost(cmd.Args[0], data, includeHeaders, timeout)
 }
 
 func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn, sock net.Listener) {

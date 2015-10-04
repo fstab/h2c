@@ -6,8 +6,6 @@ import (
 	"github.com/fstab/h2c/cli/rpc"
 )
 
-var syntaxError = errors.New("Syntax error. Run 'h2c --help' for help.")
-
 func Parse(args []string) (*rpc.Command, error) {
 	if len(args) == 1 && (args[0] == HELP_OPTION.short || args[0] == HELP_OPTION.long) {
 		// h2c --help
@@ -21,10 +19,10 @@ func Parse(args []string) (*rpc.Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(remainingArgs) < cmd.minArgs+1 || len(remainingArgs) > cmd.maxArgs+1 {
-		return nil, errors.New(usage(cmd))
-	}
 	if HELP_OPTION.IsSet(options) {
+		return nil, errors.New(help(cmd))
+	}
+	if len(remainingArgs) < cmd.minArgs+1 || len(remainingArgs) > cmd.maxArgs+1 {
 		return nil, errors.New(usage(cmd))
 	}
 	cmdArgs := make([]string, 0)
@@ -45,10 +43,10 @@ func parseOptions(args []string, cmd *command) ([]string, map[string]string, err
 			if found {
 				if opt.hasParam {
 					if len(args) <= i+1 {
-						return nil, nil, syntaxError
+						return nil, nil, errors.New(globalUsage())
 					}
 					if !opt.isParamValid(args[i+1]) {
-						return nil, nil, syntaxError
+						return nil, nil, errors.New(globalUsage())
 					}
 					opt.Set(args[i+1], foundOptions)
 					args = append(args[:i], args[i+2:]...)
@@ -72,11 +70,15 @@ func globalUsage() string {
 		result += cmd.name
 		first = false
 	}
-	result += "] <args>\nRun 'h2c [cmd] --help' to learn more about a command."
+	result += "] <args>\nRun 'h2c [cmd] " + HELP_OPTION.long + "' to learn more about a command."
 	return result
 }
 
 func usage(cmd *command) string {
+	return "Usage: " + cmd.usage + "\nRun 'h2c " + cmd.name + " " + HELP_OPTION.long + "' for help."
+}
+
+func help(cmd *command) string {
 	result := cmd.description
 	result += "\nUsage: " + cmd.usage
 	availableOptions := make([]*option, 0)
@@ -96,7 +98,7 @@ func usage(cmd *command) string {
 
 func findCommand(args []string) (*command, error) {
 	if len(args) < 1 {
-		return nil, syntaxError
+		return nil, errors.New(globalUsage())
 	}
 	for _, cmd := range commands {
 		if args[0] == cmd.name {
@@ -107,7 +109,7 @@ func findCommand(args []string) (*command, error) {
 		if args[0] == opt.short || args[0] == opt.long {
 			if opt.hasParam {
 				if len(args) < 2 {
-					return nil, syntaxError
+					return nil, errors.New(globalUsage())
 				} else {
 					return findCommand(args[2:])
 				}
@@ -115,7 +117,7 @@ func findCommand(args []string) (*command, error) {
 			return findCommand(args[1:])
 		}
 	}
-	return nil, errors.New(args[0] + ": Unknown command. Run 'h2c --help' for help.")
+	return nil, errors.New(args[0] + ": Unknown command. Run 'h2c " + HELP_OPTION.long + "' for help.")
 }
 
 func (opt *option) findIndex(argv []string) (int, bool) {

@@ -48,9 +48,12 @@ func Run() (string, error) {
 	}
 }
 
+// There are two ways of specifying payload data for PUT and POST: The --file option and the --data option.
+// We simplify this here: If --file is used, we read the file and replace the command line option with --data.
+// This is a bit of a hack, but that way we don't need to read the file later.
 func applySpecialConventions(cmd *rpc.Command) (*rpc.Command, error) {
 	var err error
-	if cmd.Name == cmdline.POST_COMMAND.Name() {
+	if cmd.Name == cmdline.POST_COMMAND.Name() || cmd.Name == cmdline.PUT_COMMAND.Name() {
 		if cmdline.DATA_OPTION.IsSet(cmd.Options) && cmdline.FILE_OPTION.IsSet(cmd.Options) {
 			return nil, fmt.Errorf("Syntax error: --data and --file cannot be used together.")
 		} else if cmdline.FILE_OPTION.IsSet(cmd.Options) {

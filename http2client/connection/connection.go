@@ -92,6 +92,8 @@ func (conn *connection) HandleHttpRequest(request message.HttpRequest) {
 	switch request.GetHeader(":method") {
 	case "GET":
 		conn.handleGetRequest(request)
+	case "PUT":
+		conn.handlePutRequest(request)
 	case "POST":
 		conn.handlePostRequest(request)
 	default:
@@ -110,6 +112,10 @@ func (conn *connection) handleGetRequest(request message.HttpRequest) {
 	} else {
 		conn.doRequest(request)
 	}
+}
+
+func (conn *connection) handlePutRequest(request message.HttpRequest) {
+	conn.doRequest(request)
 }
 
 func (conn *connection) handlePostRequest(request message.HttpRequest) {
