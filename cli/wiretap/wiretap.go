@@ -3,6 +3,7 @@ package wiretap
 import (
 	"crypto/tls"
 	"fmt"
+	"github.com/fstab/h2c/cli/daemon"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/http2/hpack"
 	"io"
@@ -114,9 +115,9 @@ func dumpFrames(in chan frames.Frame, out chan frames.Frame) {
 	for {
 		select {
 		case frame := <-in:
-			frames.DumpIncoming(frame)
+			daemon.DumpIncoming(frame)
 		case frame := <-out:
-			frames.DumpOutgoing(frame)
+			daemon.DumpOutgoing(frame)
 		}
 	}
 }

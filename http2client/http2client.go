@@ -4,6 +4,7 @@ package http2client
 import (
 	"errors"
 	"fmt"
+	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/eventloop"
 	"github.com/fstab/h2c/http2client/internal/message"
 	"github.com/fstab/http2/hpack"
@@ -11,16 +12,32 @@ import (
 )
 
 type Http2Client struct {
-	loop          *eventloop.Loop
-	customHeaders []hpack.HeaderField // filled with 'h2c set'
-	err           error               // if != nil, the Http2Client becomes unusable
-	dump          bool                // h2c start --dump
+	loop                 *eventloop.Loop
+	customHeaders        []hpack.HeaderField // filled with 'h2c set'
+	err                  error               // if != nil, the Http2Client becomes unusable
+	incomingFrameFilters []func(frames.Frame) frames.Frame
+	outgoingFrameFilters []func(frames.Frame) frames.Frame
 }
 
-func New(dump bool) *Http2Client {
+func New() *Http2Client {
 	return &Http2Client{
-		dump: dump,
+		incomingFrameFilters: make([]func(frames.Frame) frames.Frame, 0),
+		outgoingFrameFilters: make([]func(frames.Frame) frames.Frame, 0),
 	}
+}
+
+// The filter is called immediately after a frame is read from the server.
+// The filter can be used to inspect and modify the incoming frames.
+// WARNING: The filter will called in another go routine.
+func (h2c *Http2Client) AddFilterForIncomingFrames(filter func(frames.Frame) frames.Frame) {
+	h2c.incomingFrameFilters = append(h2c.incomingFrameFilters, filter)
+}
+
+// The filter is called immediately before a frame is sent to the server.
+// The filter can be used to inspect and modify the outgoing frames.
+// WARNING: The filter will called in another go routine.
+func (h2c *Http2Client) AddFilterForOutgoingFrames(filter func(frames.Frame) frames.Frame) {
+	h2c.outgoingFrameFilters = append(h2c.outgoingFrameFilters, filter)
 }
 
 func (h2c *Http2Client) Connect(host string, port int) (string, error) {
@@ -30,7 +47,7 @@ func (h2c *Http2Client) Connect(host string, port int) (string, error) {
 	if h2c.loop != nil {
 		return "", fmt.Errorf("Already connected to %v:%v.", h2c.loop.Host, h2c.loop.Port)
 	}
-	loop, err := eventloop.Start(host, port, h2c.dump)
+	loop, err := eventloop.Start(host, port, h2c.incomingFrameFilters, h2c.outgoingFrameFilters)
 	if err != nil {
 		return "", err
 	}

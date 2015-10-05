@@ -38,14 +38,14 @@ type connection struct {
 	streams                    map[uint32]*stream // StreamID -> *stream
 	promisedStreamIDs          map[string]uint32  // Push Promise Path -> StreamID
 	conn                       net.Conn
-	dump                       bool
 	isShutdown                 bool
 	encodingContext            *frames.EncodingContext
 	decodingContext            *frames.DecodingContext
 	remainingSendWindowSize    int64
 	remainingReceiveWindowSize int64
-
-	err error // TODO: not used
+	incomingFrameFilters       []func(frames.Frame) frames.Frame
+	outgoingFrameFilters       []func(frames.Frame) frames.Frame
+	err                        error // TODO: not used
 }
 
 type info struct {
@@ -64,7 +64,7 @@ type writeFrameRequest struct {
 	task  *util.AsyncTask
 }
 
-func Start(host string, port int, dump bool) (Connection, error) {
+func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) (Connection, error) {
 	hostAndPort := fmt.Sprintf("%v:%v", host, port)
 	conn, err := tls.Dial("tcp", hostAndPort, &tls.Config{
 		InsecureSkipVerify: true,
@@ -80,7 +80,7 @@ func Start(host string, port int, dump bool) (Connection, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to write client preface to %v: %v", hostAndPort, err.Error())
 	}
-	c := newConnection(conn, host, port, dump)
+	c := newConnection(conn, host, port, incomingFrameFilters, outgoingFrameFilters)
 	c.Write(nil, frames.NewSettingsFrame(0))
 	return c, nil
 }
@@ -171,7 +171,7 @@ func (c *connection) FetchPromisedStream(path string) Stream {
 	}
 }
 
-func newConnection(conn net.Conn, host string, port int, dump bool) *connection {
+func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) *connection {
 	return &connection{
 		in:       make(chan frames.Frame),
 		shutdown: make(chan bool),
@@ -188,11 +188,12 @@ func newConnection(conn net.Conn, host string, port int, dump bool) *connection 
 		promisedStreamIDs:          make(map[string]uint32),
 		isShutdown:                 false,
 		conn:                       conn,
-		dump:                       dump,
 		encodingContext:            frames.NewEncodingContext(),
 		decodingContext:            frames.NewDecodingContext(),
 		remainingSendWindowSize:    2<<15 - 1,
 		remainingReceiveWindowSize: 2<<15 - 1,
+		incomingFrameFilters:       incomingFrameFilters,
+		outgoingFrameFilters:       outgoingFrameFilters,
 	}
 }
 
@@ -335,8 +336,10 @@ func (c *connection) writeImmediately(frame frames.Frame) {
 		fmt.Fprintf(os.Stderr, "Failed to encode frame: %v", err.Error())
 		os.Exit(-1)
 	}
-	if c.dump {
-		frames.DumpOutgoing(frame)
+	if c.outgoingFrameFilters != nil {
+		for _, filter := range c.outgoingFrameFilters {
+			frame = filter(frame)
+		}
 	}
 	_, err = c.conn.Write(encodedFrame)
 	if err != nil {
@@ -447,8 +450,10 @@ func (c *connection) ReadNextFrame() (frames.Frame, error) {
 		return nil, fmt.Errorf("%v: Unknown frame type.", header.HeaderType)
 	}
 	frame, err := decodeFunc(header.Flags, header.StreamId, payload, c.decodingContext)
-	if c.dump {
-		frames.DumpIncoming(frame)
+	if c.incomingFrameFilters != nil {
+		for _, filter := range c.incomingFrameFilters {
+			frame = filter(frame)
+		}
 	}
 	return frame, err
 }

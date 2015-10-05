@@ -1,8 +1,9 @@
-package frames
+package daemon
 
 import (
 	"fmt"
 	"github.com/fstab/color"
+	"github.com/fstab/h2c/http2client/frames"
 )
 
 var (
@@ -14,18 +15,18 @@ var (
 	valueColor     = color.New()
 )
 
-func DumpIncoming(frame Frame) {
+func DumpIncoming(frame frames.Frame) {
 	dump("<-", frame)
 }
 
-func DumpOutgoing(frame Frame) {
+func DumpOutgoing(frame frames.Frame) {
 	dump("->", frame)
 }
 
-func dump(prefix string, frame Frame) {
+func dump(prefix string, frame frames.Frame) {
 	prefixColor.Printf("%v ", prefix)
 	switch f := frame.(type) {
-	case *HeadersFrame:
+	case *frames.HeadersFrame:
 		frameTypeColor.Printf("HEADERS")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpEndStream(f.EndStream)
@@ -38,20 +39,20 @@ func dump(prefix string, frame Frame) {
 				valueColor.Printf(" %v\n", header.Value)
 			}
 		}
-	case *DataFrame:
+	case *frames.DataFrame:
 		frameTypeColor.Printf("DATA")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpEndStream(f.EndStream)
 		keyColor.Printf("    {%v bytes}\n", len(f.Data))
-	case *PriorityFrame:
+	case *frames.PriorityFrame:
 		frameTypeColor.Printf("PRIORITY")
 		keyColor.Printf("    Stream dependency:")
 		valueColor.Printf(" %v\n", f.StreamDependencyId)
 		keyColor.Printf("    Weight:")
-		valueColor.Printf(" %v\n", f.weight)
+		valueColor.Printf(" %v\n", f.Weight)
 		keyColor.Printf("    Exclusive:")
-		valueColor.Printf(" %v\n", f.exclusive)
-	case *SettingsFrame:
+		valueColor.Printf(" %v\n", f.Exclusive)
+	case *frames.SettingsFrame:
 		frameTypeColor.Printf("SETTINGS")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpAck(f.Ack)
@@ -63,7 +64,7 @@ func dump(prefix string, frame Frame) {
 				valueColor.Printf(" %v\n", value)
 			}
 		}
-	case *PushPromiseFrame:
+	case *frames.PushPromiseFrame:
 		frameTypeColor.Printf("PUSH_PROMISE")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpEndHeaders(f.EndHeaders)
@@ -77,19 +78,19 @@ func dump(prefix string, frame Frame) {
 				valueColor.Printf(" %v\n", header.Value)
 			}
 		}
-	case *RstStreamFrame:
+	case *frames.RstStreamFrame:
 		frameTypeColor.Printf("RST_STREAM")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		keyColor.Printf("    Error code:")
 		valueColor.Printf(" %v\n", f.ErrorCode.String())
-	case *GoAwayFrame:
+	case *frames.GoAwayFrame:
 		frameTypeColor.Printf("GOAWAY")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		keyColor.Printf("    Last stream id:")
 		valueColor.Printf(" %v\n", f.LastStreamId)
 		keyColor.Printf("    Error code:")
 		valueColor.Printf(" %v\n", f.ErrorCode.String())
-	case *WindowUpdateFrame:
+	case *frames.WindowUpdateFrame:
 		frameTypeColor.Printf("WINDOW_UPDATE")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		keyColor.Printf("    Window size increment:")

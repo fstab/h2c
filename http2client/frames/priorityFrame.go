@@ -8,16 +8,16 @@ import (
 type PriorityFrame struct {
 	StreamId           uint32
 	StreamDependencyId uint32
-	weight             uint8
-	exclusive          bool
+	Weight             uint8
+	Exclusive          bool
 }
 
 func NewPriorityFrame(streamId uint32, streamDependencyId uint32, weight uint8, exclusive bool) *PriorityFrame {
 	return &PriorityFrame{
 		StreamId:           streamId,
 		StreamDependencyId: streamDependencyId,
-		weight:             weight,
-		exclusive:          exclusive,
+		Weight:             weight,
+		Exclusive:          exclusive,
 	}
 }
 
@@ -38,8 +38,8 @@ func (f *PriorityFrame) Type() Type {
 func (f *PriorityFrame) Encode(context *EncodingContext) ([]byte, error) {
 	payload := make([]byte, 5)
 	binary.BigEndian.PutUint32(payload[0:4], f.StreamDependencyId)
-	payload[4] = f.weight
-	if f.exclusive {
+	payload[4] = f.Weight
+	if f.Exclusive {
 		payload[0] |= 0x80
 	}
 	return payload, nil

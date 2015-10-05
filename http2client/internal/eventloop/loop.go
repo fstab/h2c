@@ -35,7 +35,7 @@ type Loop struct {
 //
 // 1. Command line: A user types a comand in order to send a GET, POST, ... request.
 // 2. Network Socket: Frames received from the server.
-func Start(host string, port int, dump bool) (*Loop, error) {
+func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) (*Loop, error) {
 	l := &Loop{
 		HttpRequests:       make(chan (message.HttpRequest)),
 		MonitoringRequests: make(chan (message.MonitoringRequest)),
@@ -44,7 +44,7 @@ func Start(host string, port int, dump bool) (*Loop, error) {
 		Host:               host,
 		Port:               port,
 	}
-	conn, err := connection.Start(host, port, dump)
+	conn, err := connection.Start(host, port, incomingFrameFilters, outgoingFrameFilters)
 	stopFrameReader := false
 	if err != nil {
 		return nil, err

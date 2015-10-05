@@ -7,6 +7,7 @@ import (
 	"github.com/fstab/h2c/cli/cmdline"
 	"github.com/fstab/h2c/cli/rpc"
 	"github.com/fstab/h2c/http2client"
+	"github.com/fstab/h2c/http2client/frames"
 	"io"
 	"net"
 	"os"
@@ -14,6 +15,16 @@ import (
 	"strconv"
 	"strings"
 )
+
+func incomingFrameFilter(frame frames.Frame) frames.Frame {
+	DumpIncoming(frame)
+	return frame
+}
+
+func outgoingFrameFilter(frame frames.Frame) frames.Frame {
+	DumpOutgoing(frame)
+	return frame
+}
 
 // Run the h2c process, i.e, the process started with 'h2c start'.
 //
@@ -24,7 +35,11 @@ import (
 func Run(sock net.Listener, dump bool) error {
 	var conn net.Conn
 	var err error
-	var h2c = http2client.New(dump)
+	var h2c = http2client.New()
+	if dump {
+		h2c.AddFilterForIncomingFrames(incomingFrameFilter)
+		h2c.AddFilterForOutgoingFrames(outgoingFrameFilter)
+	}
 	stopOnSigterm(sock)
 	for {
 		if conn, err = sock.Accept(); err != nil {
