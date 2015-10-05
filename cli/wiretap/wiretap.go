@@ -3,7 +3,6 @@ package wiretap
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/fstab/h2c/http2client/connection"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/http2/hpack"
 	"io"
@@ -15,7 +14,7 @@ import (
 
 // cert and key created with openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -nodes
 
-var cert = `-----BEGIN CERTIFICATE-----
+const CERT = `-----BEGIN CERTIFICATE-----
 MIIDsjCCApqgAwIBAgIJAPEIhIIN7mKdMA0GCSqGSIb3DQEBBQUAMEQxCzAJBgNV
 BAYTAkRFMRMwEQYDVQQIEwpTb21lLVN0YXRlMQwwCgYDVQQKEwNoMmMxEjAQBgNV
 BAMTCWxvY2FsaG9zdDAeFw0xNTA4MTQyMTA3NThaFw0xNTA5MTMyMTA3NThaMEQx
@@ -38,7 +37,7 @@ OsUtIMz0L98UIkxB8bn2CEKTJZ+crWdCKmLm2ZBkOokHy9Cu8fNcLQapzIupUVE8
 WKGxhKUd1Sx20Ou5t0Z1vWIISsaHvWuA7Dt/7YJoCjv1de7BNbM=
 -----END CERTIFICATE-----`
 
-var key = `-----BEGIN RSA PRIVATE KEY-----
+const KEY = `-----BEGIN RSA PRIVATE KEY-----
 MIIEpAIBAAKCAQEAvF7iCwVLtD+zCwDnA6ZQpHS7074itGcy8ZuIowDuqW4xnVV/
 ZWuI2TtV/c+5+1vkNoQepPr11VsJDOCrc6hm60sV4L3WUbAusPN4xkreiIn1HxtY
 0DoUjs5q++AQdTg9bzxu+WTOSqxRucDWCXu9CgGh90RRLx8WDja9FwT5c4vh5ag3
@@ -65,6 +64,8 @@ WQH6kwKBgQCs4QRrDdiVqmnxGcIfLdVCeX0Cq32RsL9Rlmaj6nL4zUR6bwq7TUGW
 zPLXVYepsNYyJEPAJd7QHzod0dDESJT3E7hm5xULdZiIU2/HR9D7IY9ukvaOHBz7
 zuaJapKwoKydbiLGlhvpcBtsE5ahRo3A62ckaeVi4JX7dXcpqAtM9A==
 -----END RSA PRIVATE KEY-----`
+
+const CLIENT_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
 func Run(local string, remote string) error {
 	if !strings.Contains(remote, ":") {
@@ -214,7 +215,7 @@ func writeFrame(conn net.Conn, frame frames.Frame, context *frames.EncodingConte
 }
 
 func negotiateH2Protocol(conn net.Conn) (*tls.Conn, error) {
-	keyPair, err := tls.X509KeyPair([]byte(cert), []byte(key))
+	keyPair, err := tls.X509KeyPair([]byte(CERT), []byte(KEY))
 	if err != nil {
 		return nil, err
 	}
@@ -234,12 +235,12 @@ func negotiateH2Protocol(conn net.Conn) (*tls.Conn, error) {
 }
 
 func receiveClientPreface(tlsConn *tls.Conn) error {
-	buf := make([]byte, len(connection.CLIENT_PREFACE))
+	buf := make([]byte, len(CLIENT_PREFACE))
 	_, err := io.ReadFull(tlsConn, buf)
 	if err != nil {
 		return fmt.Errorf("Failed to receive data from %v: %v", tlsConn.RemoteAddr(), err.Error())
 	}
-	if string(buf) != connection.CLIENT_PREFACE {
+	if string(buf) != CLIENT_PREFACE {
 		firstLine := strings.Split(string(buf), "\n")[0]
 		return fmt.Errorf("Failed to receive data from %v: Received \"%v\".", tlsConn.RemoteAddr(), firstLine)
 	}
@@ -258,7 +259,7 @@ func connectToServer(hostAndPort string) (*tls.Conn, error) {
 	if tlsConn.ConnectionState().NegotiatedProtocol != "h2" {
 		return nil, fmt.Errorf("Server does not support HTTP/2 protocol.")
 	}
-	_, err = tlsConn.Write([]byte(connection.CLIENT_PREFACE))
+	_, err = tlsConn.Write([]byte(CLIENT_PREFACE))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to write client preface to %v: %v", hostAndPort, err.Error())
 	}

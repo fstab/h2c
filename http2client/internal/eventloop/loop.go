@@ -2,9 +2,9 @@ package eventloop
 
 import (
 	"fmt"
-	"github.com/fstab/h2c/http2client/connection"
 	"github.com/fstab/h2c/http2client/frames"
-	"github.com/fstab/h2c/http2client/message"
+	"github.com/fstab/h2c/http2client/internal/connection"
+	"github.com/fstab/h2c/http2client/internal/message"
 	"os"
 )
 

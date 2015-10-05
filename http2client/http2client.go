@@ -4,8 +4,8 @@ package http2client
 import (
 	"errors"
 	"fmt"
-	"github.com/fstab/h2c/http2client/eventloop"
-	"github.com/fstab/h2c/http2client/message"
+	"github.com/fstab/h2c/http2client/internal/eventloop"
+	"github.com/fstab/h2c/http2client/internal/message"
 	"github.com/fstab/http2/hpack"
 	"strings"
 )

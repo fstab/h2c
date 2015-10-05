@@ -2,7 +2,7 @@ package message
 
 import (
 	"fmt"
-	"github.com/fstab/h2c/http2client/util"
+	"github.com/fstab/h2c/http2client/internal/util"
 )
 
 type MonitoringRequest interface {
