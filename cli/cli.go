@@ -36,7 +36,14 @@ func Run() (string, error) {
 			if cmdline.STOP_COMMAND.Name() == cmd.Name {
 				return "", fmt.Errorf("h2c is not running.")
 			} else {
-				return "", fmt.Errorf("Please start h2c first. In order to start h2c as a background process, run '%v'.", cmdline.StartCmd)
+				fmt.Fprintf(os.Stderr, "h2c is not running. Starting h2c as a background process... ")
+				err = runDaemonShellCommand()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "failed.\n")
+					return "", fmt.Errorf("In order to start the background process manually, run '%v'.", cmdline.StartCmd)
+				} else {
+					fmt.Fprintf(os.Stderr, "done.\n")
+				}
 			}
 		}
 		res := sendCommand(cmd, ipc)
@@ -102,7 +109,7 @@ func startDaemon(ipc rpc.IpcManager, dump bool) error {
 
 func socketInUseError(ipc rpc.IpcManager) error {
 	if pidCommandSuccessful(ipc) {
-		return fmt.Errorf("h2c already running")
+		return fmt.Errorf("h2c already running. Run 'h2c stop' to stop the running process.")
 	} else {
 		return fmt.Errorf(ipc.InUseErrorMessage())
 	}
