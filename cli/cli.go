@@ -91,19 +91,27 @@ func mapFile2Data(cmd *rpc.Command) (*rpc.Command, error) {
 
 func startDaemon(ipc rpc.IpcManager, dump bool) error {
 	if ipc.IsListening() {
-		pidCmd, _ := rpc.NewCommand(cmdline.PID_COMMAND.Name(), make([]string, 0), make(map[string]string))
-		res := sendCommand(pidCmd, ipc)
-		if res.Error != nil || !isNumber(res.Message) {
-			return fmt.Errorf(ipc.InUseErrorMessage())
-		} else {
-			return fmt.Errorf("h2c already running with PID %v", res.Message)
-		}
+		return socketInUseError(ipc)
 	}
 	sock, err := ipc.Listen()
 	if err != nil {
 		return err
 	}
 	return daemon.Run(sock, dump)
+}
+
+func socketInUseError(ipc rpc.IpcManager) error {
+	if pidCommandSuccessful(ipc) {
+		return fmt.Errorf("h2c already running")
+	} else {
+		return fmt.Errorf(ipc.InUseErrorMessage())
+	}
+}
+
+func pidCommandSuccessful(ipc rpc.IpcManager) bool {
+	pidCmd, _ := rpc.NewCommand(cmdline.PID_COMMAND.Name(), make([]string, 0), make(map[string]string))
+	res := sendCommand(pidCmd, ipc)
+	return res.Error == nil && isNumber(res.Message)
 }
 
 func sendCommand(cmd *rpc.Command, ipc rpc.IpcManager) *rpc.Result {
