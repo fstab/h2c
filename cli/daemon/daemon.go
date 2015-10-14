@@ -96,22 +96,50 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 }
 
 func executeConnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
-	hostAndPort := strings.Split(cmd.Args[0], ":")
-	if len(hostAndPort) == 1 {
-		hostAndPort = append(hostAndPort, "443")
-	}
-	if len(hostAndPort) != 2 {
-		return "", fmt.Errorf("%v: Invalid hostanme", cmd.Args[0])
-	}
-	host := hostAndPort[0]
-	if len(host) < 1 {
-		return "", fmt.Errorf("%v: Invalid hostname", cmd.Args[0])
-	}
-	port, err := strconv.Atoi(hostAndPort[1])
+	scheme, host, port, err := parseSchemeHostPort(cmd.Args[0])
 	if err != nil {
-		return "", fmt.Errorf("%v: Invalid port", hostAndPort[1])
+		return "", err
 	}
-	return h2c.Connect(host, port)
+	return h2c.Connect(scheme, host, port)
+}
+
+// "https://localhost:8443" -> "https", "localhost", 8443, nil
+func parseSchemeHostPort(arg string) (string, string, int, error) {
+	var (
+		scheme string
+		host   string
+		port   int
+		err    error
+	)
+	remaining := arg
+	if strings.Contains(remaining, "://") {
+		parts := strings.SplitN(remaining, "://", 2)
+		if len(parts) != 2 {
+			return "", "", 0, fmt.Errorf("%v: Invalid hostname", arg)
+		}
+		scheme = parts[0]
+		remaining = parts[1]
+	} else {
+		scheme = "https"
+	}
+	if strings.Contains(remaining, ":") {
+		parts := strings.SplitN(remaining, ":", 2)
+		if len(parts) != 2 {
+			return "", "", 0, fmt.Errorf("%v: Invalid hostname", arg)
+		}
+		host = parts[0]
+		port, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return "", "", 0, fmt.Errorf("%v: Invalid hostname", arg)
+		}
+	} else {
+		host = remaining
+		port = 443
+		if strings.Contains(host, "/") || strings.Contains(host, "&") || strings.Contains(host, "#") {
+			return "", "", 0, fmt.Errorf("%v: Invalid hostname", arg)
+		}
+	}
+	return scheme, host, port, nil
 }
 
 func executeDisconnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {

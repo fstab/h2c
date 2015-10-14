@@ -36,13 +36,10 @@ func Run() (string, error) {
 			if cmdline.STOP_COMMAND.Name() == cmd.Name {
 				return "", fmt.Errorf("h2c is not running.")
 			} else {
-				fmt.Fprintf(os.Stderr, "h2c is not running. Starting h2c as a background process... ")
+				fmt.Fprintf(os.Stderr, "h2c is not running. Starting h2c as a background process.\n")
 				err = runDaemonShellCommand()
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "failed.\n")
-					return "", fmt.Errorf("In order to start the background process manually, run '%v'.", cmdline.StartCmd)
-				} else {
-					fmt.Fprintf(os.Stderr, "done.\n")
+					return "", fmt.Errorf("Failed. In order to start the background process manually, run '%v'.", cmdline.StartCmd)
 				}
 			}
 		}

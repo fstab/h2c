@@ -8,6 +8,8 @@ import (
 	"github.com/fstab/h2c/http2client/internal/eventloop"
 	"github.com/fstab/h2c/http2client/internal/message"
 	"github.com/fstab/http2/hpack"
+	neturl "net/url"
+	"strconv"
 	"strings"
 )
 
@@ -40,9 +42,12 @@ func (h2c *Http2Client) AddFilterForOutgoingFrames(filter func(frames.Frame) fra
 	h2c.outgoingFrameFilters = append(h2c.outgoingFrameFilters, filter)
 }
 
-func (h2c *Http2Client) Connect(host string, port int) (string, error) {
+func (h2c *Http2Client) Connect(scheme string, host string, port int) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
+	}
+	if scheme != "https" {
+		return "", fmt.Errorf("%v connections not supported.", scheme)
 	}
 	if h2c.loop != nil {
 		return "", fmt.Errorf("Already connected to %v:%v.", h2c.loop.Host, h2c.loop.Port)
@@ -69,53 +74,46 @@ func (h2c *Http2Client) Disconnect() (string, error) {
 }
 
 func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds int) (string, error) {
-	if h2c.err != nil {
-		return "", h2c.err
-	}
-	if !h2c.isConnected() {
-		return "", fmt.Errorf("Not connected.")
-	}
-	request := message.NewRequest("GET", "https", h2c.loop.Host, path)
-	for _, header := range h2c.customHeaders {
-		request.AddHeader(header.Name, header.Value)
-	}
-	h2c.loop.HttpRequests <- request
-	response, err := request.AwaitCompletion(timeoutInSeconds)
-	if err != nil {
-		return "", err
-	}
-	result := ""
-	if includeHeaders {
-		for _, header := range response.GetHeaders() {
-			result = result + header.Name + ": " + header.Value + "\n"
-		}
-	}
-	if response.GetData() != nil {
-		result = result + string(response.GetData())
-	}
-	return result, nil
+	return h2c.putOrPostOrGet("GET", path, nil, includeHeaders, timeoutInSeconds)
 }
 
 func (h2c *Http2Client) Put(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
-	return h2c.putOrPost("PUT", path, data, includeHeaders, timeoutInSeconds)
+	return h2c.putOrPostOrGet("PUT", path, data, includeHeaders, timeoutInSeconds)
 }
 
 func (h2c *Http2Client) Post(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
-	return h2c.putOrPost("POST", path, data, includeHeaders, timeoutInSeconds)
+	return h2c.putOrPostOrGet("POST", path, data, includeHeaders, timeoutInSeconds)
 }
 
-func (h2c *Http2Client) putOrPost(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
+func (h2c *Http2Client) putOrPostOrGet(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
 	}
-	if !h2c.isConnected() {
-		return "", fmt.Errorf("Not connected.")
+	url, err := h2c.completeUrlWithCurrentConnectionData(path)
+	if err != nil {
+		return "", err
 	}
-	request := message.NewRequest(method, "https", h2c.loop.Host, path)
+	if !h2c.isConnected() {
+		scheme := "https"
+		if url.Scheme != "" {
+			scheme = url.Scheme
+		}
+		host, port := hostAndPort(url)
+		_, err := h2c.Connect(scheme, host, port)
+		if err != nil {
+			return "", err
+		}
+	}
+	if !h2c.urlMatchesCurrentConnection(url) {
+		return "", fmt.Errorf("Cannot query %v while connected to %v", url.Scheme+"://"+url.Host, "https://"+hostAndPortString(h2c.loop.Host, h2c.loop.Port))
+	}
+	request := message.NewRequest(method, url)
 	for _, header := range h2c.customHeaders {
 		request.AddHeader(header.Name, header.Value)
 	}
-	request.AddData(data, true)
+	if data != nil {
+		request.AddData(data, true)
+	}
 	h2c.loop.HttpRequests <- request
 	response, err := request.AwaitCompletion(timeoutInSeconds)
 	if err != nil {
@@ -131,6 +129,50 @@ func (h2c *Http2Client) putOrPost(method string, path string, data []byte, inclu
 		result = result + string(response.GetData())
 	}
 	return result, nil
+}
+
+func (h2c *Http2Client) completeUrlWithCurrentConnectionData(path string) (*neturl.URL, error) {
+	url, err := neturl.Parse(path)
+	if err != nil {
+		return nil, fmt.Errorf("%v: Invalid path.")
+	}
+	if !h2c.isConnected() {
+		return url, nil
+	}
+	if url.Scheme == "" {
+		url.Scheme = "https"
+	}
+	if url.Host == "" {
+		url.Host = hostAndPortString(h2c.loop.Host, h2c.loop.Port)
+	}
+	return url, nil
+}
+
+func (h2c *Http2Client) urlMatchesCurrentConnection(url *neturl.URL) bool {
+	if !h2c.isConnected() {
+		return false
+	}
+	host, port := hostAndPort(url)
+	return url.Scheme == "https" && host == h2c.loop.Host && port == h2c.loop.Port
+}
+
+func hostAndPort(url *neturl.URL) (string, int) {
+	parts := strings.SplitN(url.Host, ":", 2)
+	if len(parts) == 2 {
+		port, err := strconv.Atoi(parts[1])
+		if err == nil {
+			return parts[0], port
+		}
+	}
+	return url.Host, 443
+}
+
+func hostAndPortString(host string, port int) string {
+	result := host
+	if port != 443 {
+		result = result + ":" + strconv.Itoa(port)
+	}
+	return result
 }
 
 func (h2c *Http2Client) PushList() (string, error) {

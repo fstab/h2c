@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/internal/util"
 	"github.com/fstab/http2/hpack"
+	neturl "net/url"
 	"strconv"
 )
 
@@ -26,12 +27,12 @@ type HttpResponse interface {
 	HttpMessage
 }
 
-func NewRequest(method, scheme, authority, path string) HttpRequest {
+func NewRequest(method string, url *neturl.URL) HttpRequest {
 	headers := make([]hpack.HeaderField, 4)
 	headers[0] = hpack.HeaderField{Name: ":method", Value: method}
-	headers[1] = hpack.HeaderField{Name: ":scheme", Value: scheme}
-	headers[2] = hpack.HeaderField{Name: ":authority", Value: authority}
-	headers[3] = hpack.HeaderField{Name: ":path", Value: path}
+	headers[1] = hpack.HeaderField{Name: ":scheme", Value: url.Scheme}
+	headers[2] = hpack.HeaderField{Name: ":authority", Value: url.Host}    // TODO: Include user ?
+	headers[3] = hpack.HeaderField{Name: ":path", Value: url.RequestURI()} // TODO: Does not include Fragment ?
 	return &request{
 		headers:  headers,
 		callback: util.NewAsyncTask(),

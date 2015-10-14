@@ -28,7 +28,7 @@ var (
 		minArgs:     1,
 		maxArgs:     1,
 		areArgsValid: func(args []string) bool {
-			return regexp.MustCompile("^[^:]+(:[0-9]+)?$").MatchString(args[0])
+			return regexp.MustCompile("^(https?://)?[^:]+(:[0-9]+)?$").MatchString(args[0])
 		},
 		usage: "h2c connect [options] <host>:<port>",
 	}
