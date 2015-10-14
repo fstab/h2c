@@ -8,6 +8,7 @@ import (
 	"github.com/fstab/h2c/http2client/internal/eventloop"
 	"github.com/fstab/h2c/http2client/internal/message"
 	"github.com/fstab/http2/hpack"
+	"go.googlesource.com/go/src/regexp"
 	neturl "net/url"
 	"strconv"
 	"strings"
@@ -99,6 +100,9 @@ func (h2c *Http2Client) putOrPostOrGet(method string, path string, data []byte, 
 			scheme = url.Scheme
 		}
 		host, port := hostAndPort(url)
+		if host == "" {
+			return "", fmt.Errorf("Not connected. Run 'h2c connect' first.")
+		}
 		_, err := h2c.Connect(scheme, host, port)
 		if err != nil {
 			return "", err
@@ -132,6 +136,9 @@ func (h2c *Http2Client) putOrPostOrGet(method string, path string, data []byte, 
 }
 
 func (h2c *Http2Client) completeUrlWithCurrentConnectionData(path string) (*neturl.URL, error) {
+	if regexp.MustCompile(":[0-9]+").MatchString(path) && !strings.Contains(path, "://") && !strings.HasPrefix("/", path) {
+		path = "/" + path // Treat "localhost:8443" as "/localhost:8443" in GET, PUT, POST, DELETE requests.
+	}
 	url, err := neturl.Parse(path)
 	if err != nil {
 		return nil, fmt.Errorf("%v: Invalid path.")
