@@ -8,8 +8,8 @@ import (
 	"github.com/fstab/h2c/http2client/internal/eventloop"
 	"github.com/fstab/h2c/http2client/internal/message"
 	"github.com/fstab/http2/hpack"
-	"go.googlesource.com/go/src/regexp"
 	neturl "net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
