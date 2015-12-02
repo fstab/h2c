@@ -2,7 +2,7 @@ package daemon
 
 import (
 	"fmt"
-	"github.com/fstab/color"
+	"github.com/fatih/color"
 	"github.com/fstab/h2c/http2client/frames"
 )
 

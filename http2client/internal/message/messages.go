@@ -3,7 +3,7 @@ package message
 import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/internal/util"
-	"github.com/fstab/http2/hpack"
+	"golang.org/x/net/http2/hpack"
 	neturl "net/url"
 	"strconv"
 )

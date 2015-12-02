@@ -3,7 +3,7 @@ package frames
 import (
 	"bytes"
 	"fmt"
-	"github.com/fstab/http2/hpack"
+	"golang.org/x/net/http2/hpack"
 )
 
 const (

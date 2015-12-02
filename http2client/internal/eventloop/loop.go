@@ -25,7 +25,8 @@ type Loop struct {
 //    and decreases the flow control window at the same time.
 //  * etc.
 //
-// Therefore, each HTTP/2 connection is handled single thread in h2c.
+// Therefore, each HTTP/2 connection is handled single thread in h2c
+// (that is, h2c avoids concurrency problems by being single-threaded per connection).
 //
 // The eventloop takes all events, and executes them sequentially in a single thread.
 // The implementation in github.com/fstab/h2c/http2client/connection does not need

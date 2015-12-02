@@ -2,7 +2,7 @@ package frames
 
 import (
 	"bytes"
-	"github.com/fstab/http2/hpack"
+	"golang.org/x/net/http2/hpack"
 )
 
 type EncodingContext struct {

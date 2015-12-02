@@ -59,9 +59,15 @@ Binary releases are available on the [GitHub Releases](https://github.com/fstab/
 How to Build from Source
 ------------------------
 
-`h2c` is developed with [go 1.4.2](https://golang.org/dl/). With [go](https://golang.org) set up, you can download, compile, and install `h2c` as follows:
+`h2c` is developed with [go 1.5.1](https://golang.org/dl/). The external dependencies are located in the `vendor` folder,
+in order to load these dependencies, you must enable the
+[Go 1.5 Vendor Handling](http://engineeredweb.com/blog/2015/go-1.5-vendor-handling/)
+by setting the environment variable `GO15VENDOREXPERIMENT` to `1`.
+
+The following command will download, compile, and install `h2c`:
 
 ```bash
+export GO15VENDOREXPERIMENT=1
 go get github.com/fstab/h2c
 ```
 
@@ -79,5 +85,5 @@ LICENSE
 
 The following 3rd party libraries are used:
 
-  * `github.com/fstab/http2/hpack` is cloned from `github.com/bradfitz/http2/hpack`. It implements the [Header Compression for HTTP/2 (HPACK)](https://httpwg.github.io/specs/rfc7541.html). The library is licensed  [under the terms of Go itself](https://github.com/fstab/http2/blob/master/LICENSE).
-  * `github.com/fstab/color` is cloned from `github.com/fatih/color`. It implements the color output used in `h2c start --dump`. The library is licensed under an [MIT License](https://github.com/fstab/color/blob/master/LICENSE.md).
+  * `golang.org/x/net/http2/hpack` implements the [Header Compression for HTTP/2 (HPACK)](https://httpwg.github.io/specs/rfc7541.html). The library is licensed  [under the terms of Go itself](https://github.com/bradfitz/http2/blob/master/LICENSE).
+  * `github.com/fatih/color` implements the color output used in `h2c start --dump`. The library is licensed under an [MIT License](https://github.com/fatih/color/blob/master/LICENSE.md).

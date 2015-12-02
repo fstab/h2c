@@ -7,7 +7,7 @@ import (
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/eventloop"
 	"github.com/fstab/h2c/http2client/internal/message"
-	"github.com/fstab/http2/hpack"
+	"golang.org/x/net/http2/hpack"
 	neturl "net/url"
 	"regexp"
 	"strconv"

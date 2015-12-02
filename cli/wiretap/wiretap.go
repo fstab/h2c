@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/cli/daemon"
 	"github.com/fstab/h2c/http2client/frames"
-	"github.com/fstab/http2/hpack"
+	"golang.org/x/net/http2/hpack"
 	"io"
 	"net"
 	"os"
