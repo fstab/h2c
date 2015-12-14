@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func incomingFrameFilter(frame frames.Frame) frames.Frame {
@@ -84,6 +85,8 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 		return executePut(h2c, cmd)
 	case cmdline.POST_COMMAND.Name():
 		return executePost(h2c, cmd)
+	case cmdline.PING_COMMAND.Name():
+		return executePing(h2c, cmd)
 	case cmdline.PUSH_LIST_COMMAND.Name():
 		return executePushList(h2c, cmd)
 	case cmdline.SET_COMMAND.Name():
@@ -163,6 +166,48 @@ func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) 
 
 func executePushList(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 	return h2c.PushList()
+}
+
+func executePing(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	switch {
+	case cmdline.INTERVAL_OPTION.IsSet(cmd.Options) && cmdline.STOP_OPTION.IsSet(cmd.Options):
+		return "", fmt.Errorf("Syntax error. Run 'h2c ping --help' for help.")
+	case cmdline.INTERVAL_OPTION.IsSet(cmd.Options):
+		interval, err := parseTimeInterval(cmdline.INTERVAL_OPTION.Get(cmd.Options))
+		if err != nil || interval <= 0 {
+			return "", fmt.Errorf("Illegal time interval: %v", cmdline.INCLUDE_OPTION.Get(cmd.Options))
+		}
+		return h2c.PingRepeatedly(interval)
+	case cmdline.STOP_OPTION.IsSet(cmd.Options):
+		return h2c.StopPingRepeatedly()
+	default:
+		return h2c.PingOnce()
+	}
+}
+
+func parseTimeInterval(intervalString string) (time.Duration, error) {
+	var (
+		interval int
+		unit     time.Duration = 0
+		err      error         = nil
+	)
+	switch {
+	case strings.HasSuffix(intervalString, "ms"):
+		interval, err = strconv.Atoi(strings.TrimSuffix(intervalString, "ms"))
+		unit = time.Millisecond
+	case strings.HasSuffix(intervalString, "s"):
+		interval, err = strconv.Atoi(strings.TrimSuffix(intervalString, "s"))
+		unit = time.Second
+	case strings.HasSuffix(intervalString, "m"):
+		interval, err = strconv.Atoi(strings.TrimSuffix(intervalString, "m"))
+		unit = time.Minute
+	default:
+		err = fmt.Errorf("Illegal time interval: %v", intervalString)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("Illegal time interval: %v", intervalString)
+	}
+	return time.Duration(interval) * unit, nil
 }
 
 func executePut(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {

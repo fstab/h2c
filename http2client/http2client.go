@@ -7,15 +7,18 @@ import (
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/eventloop"
 	"github.com/fstab/h2c/http2client/internal/message"
+	"github.com/fstab/h2c/http2client/internal/util"
 	"golang.org/x/net/http2/hpack"
 	neturl "net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Http2Client struct {
 	loop                 *eventloop.Loop
+	pingTask             util.RepeatedTask   // Set when PingRepeatedly is called.
 	customHeaders        []hpack.HeaderField // filled with 'h2c set'
 	err                  error               // if != nil, the Http2Client becomes unusable
 	incomingFrameFilters []func(frames.Frame) frames.Frame
@@ -62,7 +65,7 @@ func (h2c *Http2Client) Connect(scheme string, host string, port int) (string, e
 }
 
 func (h2c *Http2Client) isConnected() bool {
-	return h2c.loop != nil
+	return h2c.loop != nil && !h2c.loop.IsTerminated()
 }
 
 func (h2c *Http2Client) Disconnect() (string, error) {
@@ -203,6 +206,49 @@ func (h2c *Http2Client) SetHeader(name, value string) (string, error) {
 		Name:  normalizeHeaderName(name),
 		Value: value,
 	})
+	return "", nil
+}
+
+func (h2c *Http2Client) PingOnce() (string, error) {
+	if h2c.err != nil {
+		return "", h2c.err
+	}
+	if !h2c.isConnected() {
+		return "", fmt.Errorf("Not connected. Run 'h2c connect' first.")
+	}
+	ping := message.NewPingRequest()
+	h2c.loop.PingRequests <- ping
+	_, err := ping.AwaitCompletion(10) // TODO: Hard-coded timeout in seconds.
+	if err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+func (h2c *Http2Client) PingRepeatedly(interval time.Duration) (string, error) {
+	_, err := h2c.PingOnce()
+	if err != nil {
+		return "", err
+	}
+	oldPingTask := h2c.pingTask
+	h2c.pingTask = util.StartRepeatedTask(interval, func() {
+		_, err := h2c.PingOnce()
+		if err != nil {
+			h2c.pingTask.Stop()
+			h2c.pingTask = nil
+		}
+	})
+	if oldPingTask != nil {
+		oldPingTask.Stop()
+	}
+	return "", nil
+}
+
+func (h2c *Http2Client) StopPingRepeatedly() (string, error) {
+	if h2c.pingTask != nil {
+		h2c.pingTask.Stop()
+		h2c.pingTask = nil
+	}
 	return "", nil
 }
 

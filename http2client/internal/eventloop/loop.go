@@ -11,10 +11,12 @@ import (
 type Loop struct {
 	HttpRequests       chan (message.HttpRequest)
 	MonitoringRequests chan (message.MonitoringRequest)
+	PingRequests       chan (message.PingRequest)
 	IncomingFrames     chan (frames.Frame)
 	Shutdown           chan (bool)
 	Host               string
 	Port               int
+	terminated         bool
 }
 
 // Start starts the event loop managing the HTTP/2 communication with a server.
@@ -40,10 +42,12 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 	l := &Loop{
 		HttpRequests:       make(chan (message.HttpRequest)),
 		MonitoringRequests: make(chan (message.MonitoringRequest)),
+		PingRequests:       make(chan (message.PingRequest)),
 		IncomingFrames:     make(chan (frames.Frame)),
 		Shutdown:           make(chan (bool)),
 		Host:               host,
 		Port:               port,
+		terminated:         false,
 	}
 	conn, err := connection.Start(host, port, incomingFrameFilters, outgoingFrameFilters)
 	stopFrameReader := false
@@ -58,11 +62,14 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 				conn.HandleIncomingFrame(frame)
 			case request := <-l.HttpRequests:
 				conn.HandleHttpRequest(request)
+			case request := <-l.PingRequests:
+				conn.HandlePingRequest(request)
 			case request := <-l.MonitoringRequests:
 				conn.HandleMonitoringRequest(request)
 			case <-l.Shutdown:
 				stopFrameReader = true // Would this change be visible in the other go function?
 				conn.Shutdown()
+				l.terminated = true
 				return
 			}
 		}
@@ -77,6 +84,7 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error while reading next frame: %v\n", err.Error()) // TODO: Error handling
 				conn.Shutdown()
+				l.terminated = true
 				return
 			} else {
 				l.IncomingFrames <- frame
@@ -84,4 +92,8 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 		}
 	}()
 	return l, nil
+}
+
+func (l *Loop) IsTerminated() bool {
+	return l.terminated
 }

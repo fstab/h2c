@@ -28,6 +28,7 @@ type Connection interface {
 	ReadNextFrame() (frames.Frame, error)
 	HandleHttpRequest(request message.HttpRequest)
 	HandleMonitoringRequest(request message.MonitoringRequest)
+	HandlePingRequest(request message.PingRequest)
 }
 
 type connection struct {
@@ -36,7 +37,9 @@ type connection struct {
 	info                       *info
 	settings                   *settings
 	streams                    map[uint32]*stream // StreamID -> *stream
-	promisedStreamIDs          map[string]uint32  // Push Promise Path -> StreamID
+	nextPingId                 uint64
+	pendingPingRequests        map[uint64]message.PingRequest
+	promisedStreamIDs          map[string]uint32 // Push Promise Path -> StreamID
 	conn                       net.Conn
 	isShutdown                 bool
 	encodingContext            *frames.EncodingContext
@@ -171,6 +174,13 @@ func (c *connection) FetchPromisedStream(path string) Stream {
 	}
 }
 
+func (c *connection) HandlePingRequest(request message.PingRequest) {
+	pingFrame := frames.NewPingFrame(0, c.nextPingId, false)
+	c.nextPingId = c.nextPingId + 1
+	c.pendingPingRequests[pingFrame.Payload] = request
+	c.writeImmediately(pingFrame)
+}
+
 func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) *connection {
 	return &connection{
 		in:       make(chan frames.Frame),
@@ -185,6 +195,7 @@ func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []
 			initialReceiveWindowSizeForNewStreams: 2<<15 - 1,
 		},
 		streams:                    make(map[uint32]*stream),
+		pendingPingRequests:        make(map[uint64]message.PingRequest),
 		promisedStreamIDs:          make(map[string]uint32),
 		isShutdown:                 false,
 		conn:                       conn,
@@ -244,11 +255,22 @@ func (c *connection) HandleIncomingFrame(frame frames.Frame) {
 		}
 		c.getOrCreateStream(frame.PromisedStreamId)
 		c.promisedStreamIDs[path] = frame.PromisedStreamId
+	case *frames.PingFrame:
+		if frame.Ack {
+			pendingPingRequest, exists := c.pendingPingRequests[frame.Payload]
+			if exists {
+				delete(c.pendingPingRequests, frame.Payload)
+				pendingPingRequest.CompleteSuccessfully(message.NewPingResponse())
+			} else {
+				pingFrame := frames.NewPingFrame(0, frame.Payload, true)
+				c.writeImmediately(pingFrame)
+			}
+		}
 	case *frames.RstStreamFrame:
 		stream, exists := c.streams[frame.GetStreamId()]
 		if !exists {
 			// TODO: error handling
-			fmt.Fprintf(os.Stderr, "Received data for unknown stream %v. Ignoring this frame.", frame.GetStreamId())
+			fmt.Fprintf(os.Stderr, "Received data for unknown stream %v. Ignoring this frame.\n", frame.GetStreamId())
 			return
 		}
 		stream.setError(fmt.Errorf("ERROR: Server sent RST_STREAM with error code %v.", frame.ErrorCode.String()))
@@ -257,11 +279,11 @@ func (c *connection) HandleIncomingFrame(frame frames.Frame) {
 		c.handleWindowUpdateFrame(frame)
 	case *frames.GoAwayFrame:
 		// TODO: error handling
-		fmt.Fprintf(os.Stderr, "Connection closed: Server sent GOAWAY with error code %v", frame.ErrorCode.String())
+		fmt.Fprintf(os.Stderr, "Connection closed: Server sent GOAWAY with error code %v\n", frame.ErrorCode.String())
 		c.shutdown <- true
 	default:
 		// TODO: error handling
-		fmt.Fprintf(os.Stderr, "Received unknown frame type %v", frame.Type())
+		fmt.Fprintf(os.Stderr, "Received unknown frame type %v\n", frame.Type())
 	}
 }
 

@@ -16,6 +16,7 @@ const (
 	RST_STREAM_TYPE    Type = 0x03
 	SETTINGS_TYPE      Type = 0x04
 	PUSH_PROMISE_TYPE  Type = 0x05
+	PING_TYPE          Type = 0x06
 	GOAWAY_TYPE        Type = 0x07
 	WINDOW_UPDATE_TYPE Type = 0x08
 )
@@ -40,6 +41,8 @@ func FindDecoder(frameType Type) func(flags byte, streamId uint32, payload []byt
 		return DecodeSettingsFrame
 	case PUSH_PROMISE_TYPE:
 		return DecodePushPromiseFrame
+	case PING_TYPE:
+		return DecodePingFrame
 	case GOAWAY_TYPE:
 		return DecodeGoAwayFrame
 	case WINDOW_UPDATE_TYPE:

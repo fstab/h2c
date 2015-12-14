@@ -44,3 +44,28 @@ func TestDuplicateOption(t *testing.T) {
 		}
 	}
 }
+
+func TestIntervalOption(t *testing.T) {
+	invalid := []string{
+		"hello",
+		"0s",
+		"8h",
+		"1.5m",
+		"",
+	}
+	valid := []string{
+		"3s",
+		"500ms",
+		"10m",
+	}
+	for _, param := range invalid {
+		if INTERVAL_OPTION.isParamValid(param) {
+			t.Error(param, " should not be a valid time interval.")
+		}
+	}
+	for _, param := range valid {
+		if !INTERVAL_OPTION.isParamValid(param) {
+			t.Error(param, " should be a valid time interval.")
+		}
+	}
+}

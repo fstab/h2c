@@ -92,6 +92,13 @@ var (
 		},
 		usage: "h2c unset <header-name> [<header-value>]",
 	}
+	PING_COMMAND = &command{
+		name:        "ping",
+		description: "Send ping frames.",
+		minArgs:     0,
+		maxArgs:     0,
+		usage:       "h2c ping [options]",
+	}
 	PID_COMMAND = &command{
 		name:        "pid",
 		description: "Show the process id of the h2c process.",
@@ -143,6 +150,7 @@ var commands = []*command{
 	POST_COMMAND,
 	SET_COMMAND,
 	UNSET_COMMAND,
+	PING_COMMAND,
 	PID_COMMAND,
 	PUSH_LIST_COMMAND,
 	STOP_COMMAND,
@@ -229,7 +237,7 @@ var (
 		short:       "-h",
 		long:        "--help",
 		description: "Show this help message.",
-		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, PUT_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND, PUSH_LIST_COMMAND, WIRETAP_COMMAND, VERSION_COMMAND},
+		commands:    commands, // help option is available for all commands.
 		hasParam:    false,
 	}
 	DUMP_OPTION = &option{
@@ -237,6 +245,23 @@ var (
 		long:        "--dump",
 		description: "Dump traffic to console.",
 		commands:    []*command{START_COMMAND},
+		hasParam:    false,
+	}
+	INTERVAL_OPTION = &option{
+		short:       "-i",
+		long:        "--interval",
+		description: "Ping repeatedly. The time interval can be milliseconds (example: 500ms), seconds (example: 1s), or minutes (example: 2m). If ping is already running, this will update the time interval.",
+		commands:    []*command{PING_COMMAND},
+		hasParam:    true,
+		isParamValid: func(param string) bool {
+			return regexp.MustCompile("^[1-9][0-9]*(ms|s|m)$").MatchString(param)
+		},
+	}
+	STOP_OPTION = &option{
+		short:       "-s",
+		long:        "--stop",
+		description: "Stop pinging repeatedly.",
+		commands:    []*command{PING_COMMAND},
 		hasParam:    false,
 	}
 )
@@ -249,4 +274,6 @@ var options = []*option{
 	DUMP_OPTION,
 	DATA_OPTION,
 	FILE_OPTION,
+	INTERVAL_OPTION,
+	STOP_OPTION,
 }

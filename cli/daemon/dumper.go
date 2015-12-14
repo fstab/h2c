@@ -83,6 +83,12 @@ func dump(prefix string, frame frames.Frame) {
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		keyColor.Printf("    Error code:")
 		valueColor.Printf(" %v\n", f.ErrorCode.String())
+	case *frames.PingFrame:
+		frameTypeColor.Printf("PING")
+		streamIdColor.Printf("(%v)\n", f.StreamId)
+		dumpAck(f.Ack)
+		keyColor.Printf("    payload:")
+		valueColor.Printf(" 0x%016x\n", f.Payload)
 	case *frames.GoAwayFrame:
 		frameTypeColor.Printf("GOAWAY")
 		streamIdColor.Printf("(%v)\n", f.StreamId)
