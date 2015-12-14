@@ -38,7 +38,8 @@ BUILD_SCRIPT="
     mv /tmp/h2c /go/src/github.com/fstab &&
     export GO15VENDOREXPERIMENT=1 &&
     go install github.com/fstab/h2c &&
-    echo 'build successful.'
+    echo build successful &&
+    /go/bin/h2c version
 "
 
 container_id=$(docker create --net=none -i -t golang bash -c "$BUILD_SCRIPT")

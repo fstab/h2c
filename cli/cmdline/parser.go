@@ -100,6 +100,10 @@ func findCommand(args []string) (*command, error) {
 	if len(args) < 1 {
 		return nil, errors.New(globalUsage())
 	}
+	// make '--version' be like 'version'
+	if args[0] == "--"+VERSION_COMMAND.name {
+		return VERSION_COMMAND, nil
+	}
 	for _, cmd := range commands {
 		if args[0] == cmd.name {
 			return cmd, nil

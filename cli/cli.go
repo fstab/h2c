@@ -9,6 +9,7 @@ import (
 	"github.com/fstab/h2c/cli/daemon"
 	"github.com/fstab/h2c/cli/rpc"
 	"github.com/fstab/h2c/cli/wiretap"
+	"github.com/fstab/h2c/http2client"
 	"io"
 	"io/ioutil"
 	"os"
@@ -27,6 +28,8 @@ func Run() (string, error) {
 		return "", err
 	}
 	switch cmd.Name {
+	case cmdline.VERSION_COMMAND.Name():
+		return "h2c version " + http2client.VERSION + " build date " + http2client.BUILD_DATE + ".", nil
 	case cmdline.START_COMMAND.Name():
 		return "", startDaemon(ipc, cmdline.DUMP_OPTION.IsSet(cmd.Options))
 	case cmdline.WIRETAP_COMMAND.Name():

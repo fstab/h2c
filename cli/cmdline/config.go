@@ -121,6 +121,13 @@ var (
 		maxArgs: 2,
 		usage:   "h2c wiretap <localhost:port> <remotehost:port>\n",
 	}
+	VERSION_COMMAND = &command{
+		name:        "version",
+		description: "Print the version of h2c.",
+		minArgs:     0,
+		maxArgs:     0,
+		usage:       "h2c version",
+	}
 )
 
 func (c *command) Name() string {
@@ -140,6 +147,7 @@ var commands = []*command{
 	PUSH_LIST_COMMAND,
 	STOP_COMMAND,
 	WIRETAP_COMMAND,
+	VERSION_COMMAND,
 }
 
 type option struct {
@@ -221,7 +229,7 @@ var (
 		short:       "-h",
 		long:        "--help",
 		description: "Show this help message.",
-		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, PUT_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND, PUSH_LIST_COMMAND, WIRETAP_COMMAND},
+		commands:    []*command{START_COMMAND, CONNECT_COMMAND, DISCONNECT_COMMAND, GET_COMMAND, PUT_COMMAND, POST_COMMAND, SET_COMMAND, UNSET_COMMAND, PID_COMMAND, STOP_COMMAND, PUSH_LIST_COMMAND, WIRETAP_COMMAND, VERSION_COMMAND},
 		hasParam:    false,
 	}
 	DUMP_OPTION = &option{
