@@ -26,7 +26,7 @@ rm -rf "$GOPATH/src/github.com/fstab/h2c/vendor"
 mkdir "$GOPATH/src/github.com/fstab/h2c/vendor"
 mv "$TMP_DIR"/src/* "$GOPATH/src/github.com/fstab/h2c/vendor"
 
-echo LAST UPDATE: `date` > "$GOPATH/LAST_UPDATE.txt"
+echo LAST UPDATE: `date` > "$GOPATH/src/github.com/fstab/h2c/vendor/LAST_UPDATE.txt"
 
 ##########################################################
 # build in Docker container w/o network connection
