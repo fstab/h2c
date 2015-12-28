@@ -37,6 +37,7 @@ For a complete list of available commands, run `h2c --help`.
 * `h2c post [options] <path>` Perform a POST request
 * `h2c set <header-name> <header-value>` Set a header. The header will be valid for all subsequent requests.
 * `h2c unset <header-name> [<header-value>]` Undo 'h2c set'.
+* `h2c ping` Send a ping.
 * `h2c pid` Show the process id of the h2c process.
 * `h2c push-list` List responses that are available as push promises.
 * `h2c stop` Stop the h2c process
@@ -47,7 +48,7 @@ How to Download and Run
 
 Binary releases are available on the [GitHub Releases](https://github.com/fstab/h2c/releases).
 
-1. Download the latest release ZIP file: [h2c-v0.0.8.zip](https://github.com/fstab/h2c/releases/download/v0.0.8/h2c-v0.0.8.zip)
+1. Download the latest release ZIP file: [h2c-v0.0.9.zip](https://github.com/fstab/h2c/releases/download/v0.0.9/h2c-v0.0.9.zip)
 2. Extract the ZIP file
 3. Find the executable for your system in the `bin` folder:
   * Linux: `h2c_linux_amd64`
