@@ -262,10 +262,10 @@ func (c *connection) HandleIncomingFrame(frame frames.Frame) {
 			if exists {
 				delete(c.pendingPingRequests, frame.Payload)
 				pendingPingRequest.CompleteSuccessfully(message.NewPingResponse())
-			} else {
-				pingFrame := frames.NewPingFrame(0, frame.Payload, true)
-				c.writeImmediately(pingFrame)
 			}
+		} else {
+			pingFrame := frames.NewPingFrame(0, frame.Payload, true)
+			c.writeImmediately(pingFrame)
 		}
 	case *frames.RstStreamFrame:
 		stream, exists := c.streams[frame.GetStreamId()]
