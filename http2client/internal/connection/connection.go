@@ -69,14 +69,15 @@ type writeFrameRequest struct {
 
 func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) (Connection, error) {
 	hostAndPort := fmt.Sprintf("%v:%v", host, port)
+	supportedProtocols := []string{"h2", "h2-16"} // The netty server still uses h2-16, treat it as if it was h2.
 	conn, err := tls.Dial("tcp", hostAndPort, &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:         []string{"h2"},
+		NextProtos:         supportedProtocols,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to %v: %v", hostAndPort, err.Error())
 	}
-	if conn.ConnectionState().NegotiatedProtocol != "h2" {
+	if !util.SliceContainsString(supportedProtocols, conn.ConnectionState().NegotiatedProtocol) {
 		return nil, fmt.Errorf("Server does not support HTTP/2 protocol.")
 	}
 	_, err = conn.Write([]byte(CLIENT_PREFACE))
