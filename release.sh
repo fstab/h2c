@@ -7,7 +7,7 @@ set -e
 # If you need a release, please get it from https://github.com/fstab/h2c
 # ----------------------------------------------------------------------
 
-VERSION=v0.0.10
+VERSION=v0.0.11-SNAPSHOT
 
 cat > $GOPATH/src/github.com/fstab/h2c/http2client/version.go <<EOF
 package http2client
