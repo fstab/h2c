@@ -53,7 +53,7 @@ func (h2c *Http2Client) Connect(scheme string, host string, port int) (string, e
 	if scheme != "https" {
 		return "", fmt.Errorf("%v connections not supported.", scheme)
 	}
-	if h2c.loop != nil {
+	if h2c.loop != nil && !h2c.loop.IsTerminated() {
 		return "", fmt.Errorf("Already connected to %v:%v.", h2c.loop.Host, h2c.loop.Port)
 	}
 	loop, err := eventloop.Start(host, port, h2c.incomingFrameFilters, h2c.outgoingFrameFilters)

@@ -20,6 +20,7 @@ type Connection interface {
 	Port() int
 	Error() error
 	Shutdown()
+	IsShutdown() bool
 	NewStream(request message.HttpRequest) Stream
 	ServerFrameSize() uint32
 	FetchPromisedStream(path string) Stream
@@ -32,8 +33,6 @@ type Connection interface {
 }
 
 type connection struct {
-	in                         chan frames.Frame
-	shutdown                   chan bool
 	info                       *info
 	settings                   *settings
 	streams                    map[uint32]*stream // StreamID -> *stream
@@ -184,8 +183,6 @@ func (c *connection) HandlePingRequest(request message.PingRequest) {
 
 func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) *connection {
 	return &connection{
-		in:       make(chan frames.Frame),
-		shutdown: make(chan bool),
 		info: &info{
 			host: host,
 			port: port,
@@ -212,6 +209,10 @@ func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []
 func (c *connection) Shutdown() {
 	c.isShutdown = true
 	c.conn.Close()
+}
+
+func (c *connection) IsShutdown() bool {
+	return c.isShutdown
 }
 
 func (c *connection) HandleIncomingFrame(frame frames.Frame) {
@@ -279,9 +280,7 @@ func (c *connection) HandleIncomingFrame(frame frames.Frame) {
 	case *frames.WindowUpdateFrame:
 		c.handleWindowUpdateFrame(frame)
 	case *frames.GoAwayFrame:
-		// TODO: error handling
-		fmt.Fprintf(os.Stderr, "Connection closed: Server sent GOAWAY with error code %v\n", frame.ErrorCode.String())
-		c.shutdown <- true
+		c.Shutdown()
 	default:
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Received unknown frame type %v\n", frame.Type())

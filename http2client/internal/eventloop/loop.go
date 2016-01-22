@@ -67,8 +67,10 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 			case request := <-l.MonitoringRequests:
 				conn.HandleMonitoringRequest(request)
 			case <-l.Shutdown:
-				stopFrameReader = true // Would this change be visible in the other go function?
 				conn.Shutdown()
+			}
+			if conn.IsShutdown() {
+				stopFrameReader = true // Would this change be visible in the other go function?
 				l.terminated = true
 				return
 			}
