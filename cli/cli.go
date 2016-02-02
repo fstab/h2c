@@ -8,12 +8,15 @@ import (
 	"github.com/fstab/h2c/cli/cmdline"
 	"github.com/fstab/h2c/cli/daemon"
 	"github.com/fstab/h2c/cli/rpc"
+	"github.com/fstab/h2c/cli/util"
 	"github.com/fstab/h2c/cli/wiretap"
 	"github.com/fstab/h2c/http2client"
+	"github.com/fstab/h2c/http2client/frames"
 	"io"
 	"io/ioutil"
 	"os"
 	"regexp"
+	"strings"
 )
 
 // Run executes the command, as provided in os.Args.
@@ -31,7 +34,11 @@ func Run() (string, error) {
 	case cmdline.VERSION_COMMAND.Name():
 		return "h2c version " + http2client.VERSION + " build date " + http2client.BUILD_DATE + ".", nil
 	case cmdline.START_COMMAND.Name():
-		return "", startDaemon(ipc, cmdline.DUMP_OPTION.IsSet(cmd.Options))
+		frameTypesToBeDumped, err := getFrameTypesToBeDumped(cmd.Options)
+		if err != nil {
+			return "", err
+		}
+		return "", startDaemon(ipc, frameTypesToBeDumped)
 	case cmdline.WIRETAP_COMMAND.Name():
 		return "", wiretap.Run(cmd.Args[0], cmd.Args[1])
 	default:
@@ -53,6 +60,61 @@ func Run() (string, error) {
 			return res.Message, nil
 		}
 	}
+}
+
+// Get list of frame types in the 'h2c start --dump --include ...' command.
+// Returns nil if no frame should be dumped (--dump option missing).
+// Returns an error if the command line has a syntax error, like an unknown frame type or --include and --exclude both used at the same time.
+func getFrameTypesToBeDumped(options map[string]string) ([]frames.Type, error) {
+	if !cmdline.DUMP_OPTION.IsSet(options) {
+		if cmdline.INCLUDE_FRAMES_OPTION.IsSet(options) {
+			return nil, fmt.Errorf("Syntax error: Cannot use %v without %v.", cmdline.INCLUDE_FRAMES_OPTION.Name(), cmdline.DUMP_OPTION.Name())
+		} else if cmdline.EXCLUDE_FRAMES_OPTION.IsSet(options) {
+			return nil, fmt.Errorf("Syntax error: Cannot use %v without %v.", cmdline.EXCLUDE_FRAMES_OPTION.Name(), cmdline.DUMP_OPTION.Name())
+		} else {
+			return nil, nil
+		}
+	} else {
+		if cmdline.INCLUDE_FRAMES_OPTION.IsSet(options) && cmdline.EXCLUDE_FRAMES_OPTION.IsSet(options) {
+			return nil, fmt.Errorf("Syntax error: Cannot use %v together with %v.", cmdline.INCLUDE_FRAMES_OPTION.Name(), cmdline.EXCLUDE_FRAMES_OPTION.Name())
+		} else if cmdline.INCLUDE_FRAMES_OPTION.IsSet(options) {
+			return parseListOfFrameTypes(cmdline.INCLUDE_FRAMES_OPTION.Get(options))
+		} else if cmdline.EXCLUDE_FRAMES_OPTION.IsSet(options) {
+			excluded, err := parseListOfFrameTypes(cmdline.EXCLUDE_FRAMES_OPTION.Get(options))
+			if err != nil {
+				return nil, err
+			}
+			return excludeToInclude(excluded), nil
+		} else {
+			return frames.AllFrameTypes(), nil
+		}
+	}
+}
+
+func parseListOfFrameTypes(list string) ([]frames.Type, error) {
+	result := make([]frames.Type, 0)
+	for _, name := range strings.Split(list, ",") {
+		t, ok := frames.FrameNameToType(strings.TrimSpace(name))
+		if !ok {
+			return nil, fmt.Errorf("Syntax error: %v unknown.", strings.TrimSpace(name))
+		}
+		result = append(result, t)
+	}
+	return result, nil
+}
+
+// Turns the 'h2c start --dump --exclude ...' option into the equivalent '--include ...' option.
+func excludeToInclude(excluded []frames.Type) []frames.Type {
+	included := make([]frames.Type, 0)
+	for _, t := range frames.AllFrameTypes() {
+		if !util.SliceContainsFrameType(excluded, t) {
+			included = append(included, t)
+		}
+	}
+	if len(included) == 0 {
+		return nil
+	}
+	return included
 }
 
 // There are two ways of specifying payload data for PUT and POST: The --file option and the --data option.
@@ -96,7 +158,7 @@ func mapFile2Data(cmd *rpc.Command) (*rpc.Command, error) {
 	return cmd, nil
 }
 
-func startDaemon(ipc rpc.IpcManager, dump bool) error {
+func startDaemon(ipc rpc.IpcManager, frameTypesToBeDumped []frames.Type) error {
 	if ipc.IsListening() {
 		return socketInUseError(ipc)
 	}
@@ -104,7 +166,7 @@ func startDaemon(ipc rpc.IpcManager, dump bool) error {
 	if err != nil {
 		return err
 	}
-	return daemon.Run(sock, dump)
+	return daemon.Run(sock, frameTypesToBeDumped)
 }
 
 func socketInUseError(ipc rpc.IpcManager) error {

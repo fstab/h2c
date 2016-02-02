@@ -3,6 +3,7 @@ package cmdline
 
 import (
 	"errors"
+	"fmt"
 	"github.com/fstab/h2c/cli/rpc"
 )
 
@@ -36,6 +37,7 @@ func Parse(args []string) (*rpc.Command, error) {
 }
 
 func parseOptions(args []string, cmd *command) ([]string, map[string]string, error) {
+	err := fmt.Errorf("Syntax error. Run 'h2c %v %v' for help.", cmd.Name(), HELP_OPTION.Name())
 	foundOptions := make(map[string]string)
 	for _, opt := range options {
 		if opt.supportsCommand(cmd) {
@@ -43,10 +45,10 @@ func parseOptions(args []string, cmd *command) ([]string, map[string]string, err
 			if found {
 				if opt.hasParam {
 					if len(args) <= i+1 {
-						return nil, nil, errors.New(globalUsage())
+						return nil, nil, err
 					}
 					if !opt.isParamValid(args[i+1]) {
-						return nil, nil, errors.New(globalUsage())
+						return nil, nil, err
 					}
 					opt.Set(args[i+1], foundOptions)
 					args = append(args[:i], args[i+2:]...)

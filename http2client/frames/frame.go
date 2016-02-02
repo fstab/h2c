@@ -19,6 +19,7 @@ const (
 	PING_TYPE          Type = 0x06
 	GOAWAY_TYPE        Type = 0x07
 	WINDOW_UPDATE_TYPE Type = 0x08
+	// TODO: CONTINUATION_TYPE
 )
 
 type Frame interface {

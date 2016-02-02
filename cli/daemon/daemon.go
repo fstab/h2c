@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/cli/cmdline"
 	"github.com/fstab/h2c/cli/rpc"
+	"github.com/fstab/h2c/cli/util"
 	"github.com/fstab/h2c/http2client"
 	"github.com/fstab/h2c/http2client/frames"
 	"io"
@@ -17,29 +18,23 @@ import (
 	"time"
 )
 
-func incomingFrameFilter(frame frames.Frame) frames.Frame {
-	DumpIncoming(frame)
-	return frame
-}
-
-func outgoingFrameFilter(frame frames.Frame) frames.Frame {
-	DumpOutgoing(frame)
-	return frame
-}
-
 // Run the h2c process, i.e, the process started with 'h2c start'.
 //
 // The h2c process keeps an Http2Client instance, reads Commands from the socket file,
 // and uses the Http2Client to execute these commands.
 //
 // The socket will be closed when the h2c process is terminated.
-func Run(sock net.Listener, dump bool) error {
+//
+// frameTypesToBeDumped is a list of frame types that will be dumped to the console.
+// If it is nil, no frame will be dumped.
+// If it is frame.AllFrameTypes(), all frames will be dumped.
+func Run(sock net.Listener, frameTypesToBeDumped []frames.Type) error {
 	var conn net.Conn
 	var err error
 	var h2c = http2client.New()
-	if dump {
-		h2c.AddFilterForIncomingFrames(incomingFrameFilter)
-		h2c.AddFilterForOutgoingFrames(outgoingFrameFilter)
+	if frameTypesToBeDumped != nil && len(frameTypesToBeDumped) > 0 {
+		h2c.AddFilterForIncomingFrames(makeFrameFilter(DumpIncoming, frameTypesToBeDumped))
+		h2c.AddFilterForOutgoingFrames(makeFrameFilter(DumpOutgoing, frameTypesToBeDumped))
 	}
 	stopOnSigterm(sock)
 	for {
@@ -48,6 +43,15 @@ func Run(sock net.Listener, dump bool) error {
 			stop(sock)
 		}
 		go executeCommandAndCloseConnection(h2c, conn, sock)
+	}
+}
+
+func makeFrameFilter(dumpFunction func(frames.Frame), frameTypesToBeDumped []frames.Type) func(frames.Frame) frames.Frame {
+	return func(frame frames.Frame) frames.Frame {
+		if util.SliceContainsFrameType(frameTypesToBeDumped, frame.Type()) {
+			dumpFunction(frame)
+		}
+		return frame
 	}
 }
 
@@ -150,7 +154,7 @@ func executeDisconnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, 
 }
 
 func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
-	includeHeaders := cmdline.INCLUDE_OPTION.IsSet(cmd.Options)
+	includeHeaders := cmdline.INCLUDE_HEADERS_OPTION.IsSet(cmd.Options)
 	var timeout int
 	var err error
 	if cmdline.TIMEOUT_OPTION.IsSet(cmd.Options) {
@@ -175,7 +179,7 @@ func executePing(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error)
 	case cmdline.INTERVAL_OPTION.IsSet(cmd.Options):
 		interval, err := parseTimeInterval(cmdline.INTERVAL_OPTION.Get(cmd.Options))
 		if err != nil || interval <= 0 {
-			return "", fmt.Errorf("Illegal time interval: %v", cmdline.INCLUDE_OPTION.Get(cmd.Options))
+			return "", fmt.Errorf("Illegal time interval: %v", cmdline.INCLUDE_HEADERS_OPTION.Get(cmd.Options))
 		}
 		return h2c.PingRepeatedly(interval)
 	case cmdline.STOP_OPTION.IsSet(cmd.Options):
@@ -219,7 +223,7 @@ func executePost(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error)
 }
 
 func executePutOrPost(h2c *http2client.Http2Client, cmd *rpc.Command, putOrPost func(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error)) (string, error) {
-	includeHeaders := cmdline.INCLUDE_OPTION.IsSet(cmd.Options)
+	includeHeaders := cmdline.INCLUDE_HEADERS_OPTION.IsSet(cmd.Options)
 	var timeout int
 	var err error
 	if cmdline.TIMEOUT_OPTION.IsSet(cmd.Options) {

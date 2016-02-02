@@ -167,6 +167,10 @@ type option struct {
 	isParamValid func(string) bool
 }
 
+func (o *option) Name() string {
+	return o.long
+}
+
 func (o *option) IsSet(m map[string]string) bool {
 	_, ok := m[o.long]
 	return ok
@@ -186,7 +190,27 @@ func (o *option) Delete(m map[string]string) {
 }
 
 var (
-	INCLUDE_OPTION = &option{
+	INCLUDE_FRAMES_OPTION = &option{
+		short:       "-i",
+		long:        "--include",
+		description: "Use with --dump to show only the specified frame times. Example: --include HEADERS,CONTINUATION",
+		commands:    []*command{START_COMMAND},
+		hasParam:    true,
+		isParamValid: func(param string) bool {
+			return regexp.MustCompile("^[A-Za-z_]+(,\\s*[A-Za-z_]+)?$").MatchString(param)
+		},
+	}
+	EXCLUDE_FRAMES_OPTION = &option{
+		short:       "-e",
+		long:        "--exclude",
+		description: "Use with --dump to exclude the specified frame times. Example: --exclude PING,PRIORITY",
+		commands:    []*command{START_COMMAND},
+		hasParam:    true,
+		isParamValid: func(param string) bool {
+			return INCLUDE_FRAMES_OPTION.isParamValid(param)
+		},
+	}
+	INCLUDE_HEADERS_OPTION = &option{
 		short:       "-i",
 		long:        "--include",
 		description: "Show response headers in the output.",
@@ -267,7 +291,9 @@ var (
 )
 
 var options = []*option{
-	INCLUDE_OPTION,
+	INCLUDE_FRAMES_OPTION,
+	EXCLUDE_FRAMES_OPTION,
+	INCLUDE_HEADERS_OPTION,
 	TIMEOUT_OPTION,
 	CONTENT_TYPE_OPTION,
 	HELP_OPTION,
