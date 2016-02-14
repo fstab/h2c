@@ -23,7 +23,7 @@ type Connection interface {
 	IsShutdown() bool
 	NewStream(request message.HttpRequest) Stream
 	ServerFrameSize() uint32
-	FetchPromisedStream(path string) Stream
+	FindStreamCreatedWithPushPromise(path string) Stream
 	Write(stream Stream, frame frames.Frame)
 	HandleIncomingFrame(frame frames.Frame)
 	ReadNextFrame() (frames.Frame, error)
@@ -105,7 +105,7 @@ func (conn *connection) HandleHttpRequest(request message.HttpRequest) {
 }
 
 func (conn *connection) handleGetRequest(request message.HttpRequest) {
-	stream := conn.FetchPromisedStream(request.GetHeader(":path"))
+	stream := conn.FindStreamCreatedWithPushPromise(request.GetHeader(":path"))
 	if stream != nil {
 		// Don't need to send request, because PUSH_PROMISE for this request already arrived.
 		err := stream.AssociateWithRequest(request)
@@ -164,7 +164,7 @@ func (c *connection) HandleMonitoringRequest(request message.MonitoringRequest) 
 	request.CompleteSuccessfully(response)
 }
 
-func (c *connection) FetchPromisedStream(path string) Stream {
+func (c *connection) FindStreamCreatedWithPushPromise(path string) Stream {
 	streamId, exists := c.promisedStreamIDs[path]
 	if exists {
 		delete(c.promisedStreamIDs, path)
@@ -216,47 +216,18 @@ func (c *connection) IsShutdown() bool {
 }
 
 func (c *connection) HandleIncomingFrame(frame frames.Frame) {
+	streamId := frame.GetStreamId()
+	if streamId == 0 {
+		c.handleFrameForConnection(frame)
+	} else {
+		c.handleFrameForStream(frame)
+	}
+}
+
+func (c *connection) handleFrameForConnection(frame frames.Frame) {
 	switch frame := frame.(type) {
 	case *frames.SettingsFrame:
 		c.settings.handleSettingsFrame(frame)
-	case *frames.HeadersFrame:
-		stream := c.getOrCreateStream(frame.GetStreamId())
-		stream.addReceivedHeaders(frame.Headers...)
-		// TODO: continuations
-		// TODO: error handling
-		if frame.EndStream {
-			stream.endStream()
-		}
-	case *frames.DataFrame:
-		stream, exists := c.streams[frame.GetStreamId()]
-		if !exists {
-			// TODO: error handling
-			fmt.Fprintf(os.Stderr, "Received data for unknown stream %v. Ignoring this frame.", frame.GetStreamId())
-			return
-		}
-		c.flowControlForIncomingDataFrame(frame, stream)
-		stream.appendReceivedData(frame.Data)
-		if frame.EndStream {
-			stream.endStream()
-		}
-	case *frames.PushPromiseFrame:
-		method := findHeader(":method", frame.Headers)
-		path := findHeader(":path", frame.Headers)
-		if method != "GET" {
-			fmt.Fprintf(os.Stderr, "ERROR: PUSH_PROMISE with method %v not supported.", method)
-			return
-		}
-		_, exists := c.streams[frame.PromisedStreamId]
-		if exists {
-			fmt.Fprintf(os.Stderr, "ERROR: Received PUSH_PROMISE for existing stream %v", frame.PromisedStreamId)
-			return
-		}
-		if !frame.EndHeaders {
-			fmt.Fprintf(os.Stderr, "ERROR: Push promise with multiple header frames not supported.")
-			return
-		}
-		c.getOrCreateStream(frame.PromisedStreamId)
-		c.promisedStreamIDs[path] = frame.PromisedStreamId
 	case *frames.PingFrame:
 		if frame.Ack {
 			pendingPingRequest, exists := c.pendingPingRequests[frame.Payload]
@@ -268,23 +239,44 @@ func (c *connection) HandleIncomingFrame(frame frames.Frame) {
 			pingFrame := frames.NewPingFrame(0, frame.Payload, true)
 			c.writeImmediately(pingFrame)
 		}
-	case *frames.RstStreamFrame:
-		stream, exists := c.streams[frame.GetStreamId()]
-		if !exists {
-			// TODO: error handling
-			fmt.Fprintf(os.Stderr, "Received data for unknown stream %v. Ignoring this frame.\n", frame.GetStreamId())
-			return
-		}
-		stream.setError(fmt.Errorf("ERROR: Server sent RST_STREAM with error code %v.", frame.ErrorCode.String()))
-		stream.endStream()
 	case *frames.WindowUpdateFrame:
 		c.handleWindowUpdateFrame(frame)
 	case *frames.GoAwayFrame:
 		c.Shutdown()
 	default:
-		// TODO: error handling
-		fmt.Fprintf(os.Stderr, "Received unknown frame type %v\n", frame.Type())
+		msg := fmt.Sprintf("Received %v frame with stream identifier 0x00.", frame.Type())
+		c.connectionError(frames.PROTOCOL_ERROR, msg)
 	}
+}
+
+func (c *connection) connectionError(errorCode frames.ErrorCode, msg string) {
+	// TODO:
+	//   * Find highest stream id that was successfully processed
+	//   * Send GO_AWAY frame with error code PROTOCOL_ERROR (maybe msg as additional debug data)
+	//   * Shutdown
+	fmt.Fprintf(os.Stderr, "%v Should send GOAWAY frame with error code PROTOCOLL_ERROR, but this is not implemented yet.\n", msg)
+}
+
+func (c *connection) handleFrameForStream(frame frames.Frame) {
+	var stream *stream
+	switch frame := frame.(type) {
+	case *frames.PushPromiseFrame:
+		method := findHeader(":method", frame.Headers)
+		path := findHeader(":path", frame.Headers)
+		if method != "GET" {
+			fmt.Fprintf(os.Stderr, "ERROR: %v with method %v not supported.", frame.Type(), method)
+			return
+		}
+		stream = c.getOrCreateStream(frame.PromisedStreamId)
+		c.promisedStreamIDs[path] = frame.PromisedStreamId
+	default:
+		stream = c.getOrCreateStream(frame.GetStreamId())
+	}
+	switch frame := frame.(type) {
+	case *frames.DataFrame:
+		c.flowControlForIncomingDataFrame(frame)
+	}
+	stream.handleIncomingFrame(frame)
 }
 
 func findHeader(name string, headers []hpack.HeaderField) string {
@@ -298,14 +290,8 @@ func findHeader(name string, headers []hpack.HeaderField) string {
 
 // Just a quick implementation to make large downloads work.
 // Should be replaced with a more sophisticated flow control strategy
-func (c *connection) flowControlForIncomingDataFrame(frame *frames.DataFrame, stream *stream) {
+func (c *connection) flowControlForIncomingDataFrame(frame *frames.DataFrame) {
 	threshold := int64(2 << 13) // size of one frame
-	stream.remainingReceiveWindowSize -= int64(len(frame.Data))
-	if stream.remainingReceiveWindowSize < threshold {
-		diff := int64(c.settings.initialReceiveWindowSizeForNewStreams) - stream.remainingReceiveWindowSize
-		stream.remainingReceiveWindowSize += diff
-		c.Write(stream, frames.NewWindowUpdateFrame(stream.streamId, uint32(diff)))
-	}
 	c.remainingReceiveWindowSize -= int64(len(frame.Data))
 	if c.remainingReceiveWindowSize < threshold {
 		diff := int64(2<<15-1) - c.remainingReceiveWindowSize
@@ -340,6 +326,10 @@ func (c *connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
 		}
 	}
 	c.processPendingDataFrames()
+}
+
+func (c *connection) write(frame frames.Frame) {
+	c.writeImmediately(frame)
 }
 
 func (c *connection) Write(stream Stream, frame frames.Frame) {
@@ -395,7 +385,7 @@ func (c *connection) processPendingDataFrames() {
 func (c *connection) getOrCreateStream(streamId uint32) *stream {
 	stream, ok := c.streams[streamId]
 	if !ok {
-		stream = newStream(streamId, nil, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams)
+		stream = newStream(streamId, nil, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c)
 		c.streams[streamId] = stream
 	}
 	return stream
@@ -418,7 +408,7 @@ func (c *connection) NewStream(request message.HttpRequest) Stream {
 	if len(streamIdsInUse) > 0 {
 		nextStreamId = max(streamIdsInUse) + 2
 	}
-	c.streams[nextStreamId] = newStream(nextStreamId, request, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams)
+	c.streams[nextStreamId] = newStream(nextStreamId, request, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c)
 	return c.streams[nextStreamId]
 }
 
