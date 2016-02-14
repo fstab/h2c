@@ -24,7 +24,6 @@ type Connection interface {
 	NewStream(request message.HttpRequest) Stream
 	ServerFrameSize() uint32
 	FindStreamCreatedWithPushPromise(path string) Stream
-	Write(stream Stream, frame frames.Frame)
 	HandleIncomingFrame(frame frames.Frame)
 	ReadNextFrame() (frames.Frame, error)
 	HandleHttpRequest(request message.HttpRequest)
@@ -84,7 +83,7 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 		return nil, fmt.Errorf("Failed to write client preface to %v: %v", hostAndPort, err.Error())
 	}
 	c := newConnection(conn, host, port, incomingFrameFilters, outgoingFrameFilters)
-	c.Write(nil, frames.NewSettingsFrame(0))
+	c.write(frames.NewSettingsFrame(0))
 	return c, nil
 }
 
@@ -129,7 +128,7 @@ func (conn *connection) doRequest(request message.HttpRequest) {
 	stream := conn.NewStream(request)
 	headersFrame := frames.NewHeadersFrame(stream.StreamId(), request.GetHeaders())
 	headersFrame.EndStream = request.GetData() == nil
-	conn.Write(stream, headersFrame)
+	stream.handleOutgoingFrame(headersFrame)
 	if request.GetData() != nil {
 		conn.sendDataFrames(request.GetData(), stream)
 	}
@@ -145,7 +144,7 @@ func (conn *connection) sendDataFrames(data []byte, stream Stream) {
 		nChunksSent = nChunksSent + 1
 		isLast := nChunksSent*chunkSize >= total
 		dataFrame := frames.NewDataFrame(stream.StreamId(), nextChunk, isLast)
-		conn.Write(stream, dataFrame)
+		stream.handleOutgoingFrame(dataFrame)
 	}
 }
 
@@ -178,7 +177,7 @@ func (c *connection) HandlePingRequest(request message.PingRequest) {
 	pingFrame := frames.NewPingFrame(0, c.nextPingId, false)
 	c.nextPingId = c.nextPingId + 1
 	c.pendingPingRequests[pingFrame.Payload] = request
-	c.writeImmediately(pingFrame)
+	c.write(pingFrame)
 }
 
 func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) *connection {
@@ -237,7 +236,7 @@ func (c *connection) handleFrameForConnection(frame frames.Frame) {
 			}
 		} else {
 			pingFrame := frames.NewPingFrame(0, frame.Payload, true)
-			c.writeImmediately(pingFrame)
+			c.write(pingFrame)
 		}
 	case *frames.WindowUpdateFrame:
 		c.handleWindowUpdateFrame(frame)
@@ -258,7 +257,7 @@ func (c *connection) connectionError(errorCode frames.ErrorCode, msg string) {
 }
 
 func (c *connection) handleFrameForStream(frame frames.Frame) {
-	var stream *stream
+	var stream Stream
 	switch frame := frame.(type) {
 	case *frames.PushPromiseFrame:
 		method := findHeader(":method", frame.Headers)
@@ -296,7 +295,7 @@ func (c *connection) flowControlForIncomingDataFrame(frame *frames.DataFrame) {
 	if c.remainingReceiveWindowSize < threshold {
 		diff := int64(2<<15-1) - c.remainingReceiveWindowSize
 		c.remainingReceiveWindowSize += diff
-		c.Write(nil, frames.NewWindowUpdateFrame(0, uint32(diff)))
+		c.write(frames.NewWindowUpdateFrame(0, uint32(diff)))
 	}
 }
 
@@ -317,32 +316,25 @@ func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
 }
 
 func (c *connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
-	if frame.StreamId == 0 {
-		c.remainingSendWindowSize += int64(frame.WindowSizeIncrement)
-	} else {
-		stream, exists := c.streams[frame.GetStreamId()]
-		if exists {
-			stream.remainingSendWindowSize += int64(frame.WindowSizeIncrement)
-		}
+	c.increaseFlowControlWindow(int64(frame.WindowSizeIncrement))
+	for _, s := range c.streams {
+		s.processPendingDataFrames()
 	}
-	c.processPendingDataFrames()
+}
+
+func (c *connection) remainingFlowControlWindowIsEnough(nBytesToWrite int64) bool {
+	return c.remainingReceiveWindowSize > nBytesToWrite
+}
+
+func (c *connection) decreaseFlowControlWindow(nBytesToWrite int64) {
+	c.remainingSendWindowSize -= nBytesToWrite
+}
+
+func (c *connection) increaseFlowControlWindow(nBytes int64) {
+	c.remainingSendWindowSize += nBytes
 }
 
 func (c *connection) write(frame frames.Frame) {
-	c.writeImmediately(frame)
-}
-
-func (c *connection) Write(stream Stream, frame frames.Frame) {
-	_, isDataFrame := frame.(*frames.DataFrame)
-	if isDataFrame {
-		stream.scheduleDataFrameWrite(frame.(*frames.DataFrame))
-		c.processPendingDataFrames()
-	} else {
-		c.writeImmediately(frame)
-	}
-}
-
-func (c *connection) writeImmediately(frame frames.Frame) {
 	encodedFrame, err := frame.Encode(c.encodingContext)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to encode frame: %v", err.Error())
@@ -356,29 +348,6 @@ func (c *connection) writeImmediately(frame frames.Frame) {
 	_, err = c.conn.Write(encodedFrame)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write frame: %v", err.Error())
-	}
-}
-
-// processPendingDataFrames is called when:
-// a) a new data frame is scheduled for writing
-// b) the flow control window size has changed
-func (c *connection) processPendingDataFrames() {
-	frameSent := true
-	for frameSent { // As long as this loop sends out a frame, we loop again. Only if no frame was sent, we stop.
-		frameSent = false
-		for _, s := range c.streams {
-			frame := s.firstPendingDataFrameWrite()
-			if frame != nil {
-				nBytes := int64(len(frame.Data))
-				if c.remainingSendWindowSize >= nBytes && s.remainingSendWindowSize >= nBytes {
-					c.remainingSendWindowSize -= nBytes
-					s.remainingSendWindowSize -= nBytes
-					s.popFirstPendingDataFrameWrite()
-					c.writeImmediately(frame)
-					frameSent = true
-				}
-			}
-		}
 	}
 }
 
@@ -445,6 +414,7 @@ func (c *connection) Error() error {
 	return c.err
 }
 
+// TODO: This is called in another thread, which is confusing. Should have a different Handler for things that are not called from the event loop.
 func (c *connection) ReadNextFrame() (frames.Frame, error) {
 	headerData := make([]byte, 9) // Frame starts with a 9 Bytes header
 	_, err := io.ReadFull(c.conn, headerData)

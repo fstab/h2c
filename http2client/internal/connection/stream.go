@@ -14,7 +14,8 @@ type Stream interface {
 	//	ReceivedHeaders() map[string]string
 	ReceivedData() []byte
 	AssociateWithRequest(request message.HttpRequest) error
-	scheduleDataFrameWrite(frame *frames.DataFrame)
+	handleOutgoingFrame(frame frames.Frame)
+	handleIncomingFrame(frame frames.Frame)
 }
 
 // Stream states as defined in RFC 7540 section 5.1
@@ -47,6 +48,8 @@ type stream struct {
 
 type frameWriter interface {
 	write(frame frames.Frame)
+	remainingFlowControlWindowIsEnough(nBytesToWrite int64) bool
+	decreaseFlowControlWindow(nBytesToWrite int64)
 }
 
 func newStream(streamId uint32, request message.HttpRequest, initialSendWindowSize uint32, initialReceiveWindowSize uint32, out frameWriter) *stream {
@@ -78,6 +81,7 @@ func (s *stream) handleIncomingFrame(frame frames.Frame) {
 		s.appendReceivedData(frame.Data)
 		if frame.EndStream {
 			s.endStream()
+			fmt.Printf("End Stream handled.")
 		}
 	case *frames.PushPromiseFrame:
 		if !frame.EndHeaders {
@@ -87,10 +91,42 @@ func (s *stream) handleIncomingFrame(frame frames.Frame) {
 	case *frames.RstStreamFrame:
 		s.setError(fmt.Errorf("ERROR: Server sent RST_STREAM with error code %v.", frame.ErrorCode.String()))
 		s.endStream()
+	case *frames.WindowUpdateFrame:
+		s.handleWindowUpdateFrame(frame)
 	default:
 		// TODO: error handling
 		fmt.Fprintf(os.Stderr, "Received unknown frame type %v\n", frame.Type())
 	}
+}
+
+func (s *stream) handleOutgoingFrame(frame frames.Frame) {
+	switch frame := frame.(type) {
+	case *frames.DataFrame:
+		size := int64(len(frame.Data))
+		if s.remainingFlowControlWindowIsEnough(size) {
+			s.decreaseFlowControlWindow(size)
+			s.out.write(frame)
+		} else {
+			s.scheduleDataFrameWrite(frame)
+		}
+	default:
+		s.out.write(frame)
+	}
+}
+
+func (s *stream) remainingFlowControlWindowIsEnough(nBytesToWrite int64) bool {
+	return s.remainingReceiveWindowSize > nBytesToWrite && s.out.remainingFlowControlWindowIsEnough(nBytesToWrite)
+}
+
+func (s *stream) decreaseFlowControlWindow(nBytesToWrite int64) {
+	s.out.decreaseFlowControlWindow(nBytesToWrite)
+	s.remainingSendWindowSize -= nBytesToWrite
+}
+
+func (s *stream) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
+	// TODO: stream error if increment is 0.
+	s.remainingSendWindowSize += int64(frame.WindowSizeIncrement)
+	s.processPendingDataFrames()
 }
 
 // Just a quick implementation to make large downloads work.
@@ -101,19 +137,21 @@ func (s *stream) flowControlForIncomingDataFrame(frame *frames.DataFrame) {
 	if s.remainingReceiveWindowSize < threshold {
 		diff := s.initialReceiveWindowSize - s.remainingReceiveWindowSize
 		s.remainingReceiveWindowSize += diff
-		s.out.write(frames.NewWindowUpdateFrame(s.streamId, uint32(diff)))
+		s.handleOutgoingFrame(frames.NewWindowUpdateFrame(s.streamId, uint32(diff)))
+	}
+}
+
+func (s *stream) processPendingDataFrames() {
+	for _, frame := range s.pendingDataFrameWrites {
+		if !s.remainingFlowControlWindowIsEnough(int64(len(frame.Data))) {
+			return // must stop here, because data frames must be sent in the right order
+		}
+		s.handleOutgoingFrame(frame)
 	}
 }
 
 func (s *stream) scheduleDataFrameWrite(frame *frames.DataFrame) {
 	s.pendingDataFrameWrites = append(s.pendingDataFrameWrites, frame)
-}
-
-func (s *stream) firstPendingDataFrameWrite() *frames.DataFrame {
-	if len(s.pendingDataFrameWrites) > 0 {
-		return s.pendingDataFrameWrites[0]
-	}
-	return nil
 }
 
 // called after firstPendingDataFrame() returned != nil, so we know len(s.pendingDataFrames) > 0
