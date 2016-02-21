@@ -27,7 +27,7 @@ func dump(prefix string, frame frames.Frame) {
 	prefixColor.Printf("%v ", prefix)
 	switch f := frame.(type) {
 	case *frames.HeadersFrame:
-		frameTypeColor.Printf("HEADERS")
+		frameTypeColor.Printf("%v", frame.Type())
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpEndStream(f.EndStream)
 		dumpEndHeaders(f.EndHeaders)
@@ -40,12 +40,12 @@ func dump(prefix string, frame frames.Frame) {
 			}
 		}
 	case *frames.DataFrame:
-		frameTypeColor.Printf("DATA")
+		frameTypeColor.Printf("%v", frame.Type())
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpEndStream(f.EndStream)
 		keyColor.Printf("    {%v bytes}\n", len(f.Data))
 	case *frames.PriorityFrame:
-		frameTypeColor.Printf("PRIORITY")
+		frameTypeColor.Printf("%v", frame.Type())
 		keyColor.Printf("    Stream dependency:")
 		valueColor.Printf(" %v\n", f.StreamDependencyId)
 		keyColor.Printf("    Weight:")
@@ -53,7 +53,7 @@ func dump(prefix string, frame frames.Frame) {
 		keyColor.Printf("    Exclusive:")
 		valueColor.Printf(" %v\n", f.Exclusive)
 	case *frames.SettingsFrame:
-		frameTypeColor.Printf("SETTINGS")
+		frameTypeColor.Printf("%v", frame.Type())
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpAck(f.Ack)
 		if len(f.Settings) == 0 {
@@ -65,7 +65,7 @@ func dump(prefix string, frame frames.Frame) {
 			}
 		}
 	case *frames.PushPromiseFrame:
-		frameTypeColor.Printf("PUSH_PROMISE")
+		frameTypeColor.Printf("%v", frame.Type())
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpEndHeaders(f.EndHeaders)
 		keyColor.Printf("    Promised Stream Id:")
@@ -79,25 +79,25 @@ func dump(prefix string, frame frames.Frame) {
 			}
 		}
 	case *frames.RstStreamFrame:
-		frameTypeColor.Printf("RST_STREAM")
+		frameTypeColor.Printf("%v", frame.Type())
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		keyColor.Printf("    Error code:")
 		valueColor.Printf(" %v\n", f.ErrorCode.String())
 	case *frames.PingFrame:
-		frameTypeColor.Printf("PING")
+		frameTypeColor.Printf("%v", frame.Type())
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		dumpAck(f.Ack)
 		keyColor.Printf("    payload:")
 		valueColor.Printf(" 0x%016x\n", f.Payload)
 	case *frames.GoAwayFrame:
-		frameTypeColor.Printf("GOAWAY")
+		frameTypeColor.Printf("%v", frame.Type())
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		keyColor.Printf("    Last stream id:")
 		valueColor.Printf(" %v\n", f.LastStreamId)
 		keyColor.Printf("    Error code:")
 		valueColor.Printf(" %v\n", f.ErrorCode.String())
 	case *frames.WindowUpdateFrame:
-		frameTypeColor.Printf("WINDOW_UPDATE")
+		frameTypeColor.Printf("%v", frame.Type())
 		streamIdColor.Printf("(%v)\n", f.StreamId)
 		keyColor.Printf("    Window size increment:")
 		valueColor.Printf(" %v\n", f.WindowSizeIncrement)

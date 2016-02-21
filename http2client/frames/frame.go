@@ -102,3 +102,28 @@ func stripPadding(payload []byte) ([]byte, error) {
 	}
 	return payload[1 : len(payload)-padLength], nil
 }
+
+func (t Type) String() string {
+	switch t {
+	case DATA_TYPE:
+		return "DATA"
+	case HEADERS_TYPE:
+		return "HEADERS"
+	case PRIORITY_TYPE:
+		return "PRIORITY"
+	case RST_STREAM_TYPE:
+		return "RST_STREAM"
+	case SETTINGS_TYPE:
+		return "SETTINGS"
+	case PUSH_PROMISE_TYPE:
+		return "PUSH_PROMISE"
+	case PING_TYPE:
+		return "PING"
+	case GOAWAY_TYPE:
+		return "GOAWAY"
+	case WINDOW_UPDATE_TYPE:
+		return "WINDOW_UPDATE"
+	default:
+		return fmt.Sprintf("'UNKNOWN TYPE 0x%02X'", byte(t))
+	}
+}

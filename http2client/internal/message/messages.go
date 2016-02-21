@@ -1,7 +1,7 @@
 package message
 
 import (
-	"fmt"
+	"errors"
 	"github.com/fstab/h2c/http2client/internal/util"
 	"golang.org/x/net/http2/hpack"
 	neturl "net/url"
@@ -20,6 +20,13 @@ type HttpRequest interface {
 	HttpMessage
 	CompleteWithError(err error)
 	CompleteSuccessfully(resp HttpResponse)
+
+	// The error is only returned if no HTTP response was received.
+	// This can have a number of reasons, for example:
+	//   * Stream error, e.g. RST_STREAM received, illegal stream state, etc.
+	//   * Connection error, e.g. connection closed, timeout, etc.
+	//   * HttpRequest is illegal, e.g. it contains an unsupported HTTP method, etc.
+	// HTTP error codes (like 500, 404, etc.) are returned as regular HttpResponse and will not trigger the error.
 	AwaitCompletion(timeoutInSeconds int) (HttpResponse, error)
 }
 
@@ -81,7 +88,7 @@ func (req *request) AwaitCompletion(timeoutInSeconds int) (HttpResponse, error) 
 		return nil, err
 	}
 	if req.response == nil {
-		return nil, fmt.Errorf("Request got no error and no response. This is a bug.")
+		return nil, errors.New("Request got no error and no response. This is a bug.")
 	}
 	return req.response, nil
 }

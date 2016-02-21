@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/message"
+	"github.com/fstab/h2c/http2client/internal/streamstate"
 	"github.com/fstab/h2c/http2client/internal/util"
 	"golang.org/x/net/http2/hpack"
 	"io"
@@ -128,7 +129,7 @@ func (conn *connection) doRequest(request message.HttpRequest) {
 	stream := conn.NewStream(request)
 	headersFrame := frames.NewHeadersFrame(stream.StreamId(), request.GetHeaders())
 	headersFrame.EndStream = request.GetData() == nil
-	stream.handleOutgoingFrame(headersFrame)
+	stream.sendFrame(headersFrame)
 	if request.GetData() != nil {
 		conn.sendDataFrames(request.GetData(), stream)
 	}
@@ -144,7 +145,7 @@ func (conn *connection) sendDataFrames(data []byte, stream Stream) {
 		nChunksSent = nChunksSent + 1
 		isLast := nChunksSent*chunkSize >= total
 		dataFrame := frames.NewDataFrame(stream.StreamId(), nextChunk, isLast)
-		stream.handleOutgoingFrame(dataFrame)
+		stream.sendFrame(dataFrame)
 	}
 }
 
@@ -251,31 +252,57 @@ func (c *connection) handleFrameForConnection(frame frames.Frame) {
 func (c *connection) connectionError(errorCode frames.ErrorCode, msg string) {
 	// TODO:
 	//   * Find highest stream id that was successfully processed
-	//   * Send GO_AWAY frame with error code PROTOCOL_ERROR (maybe msg as additional debug data)
-	//   * Shutdown
-	fmt.Fprintf(os.Stderr, "%v Should send GOAWAY frame with error code PROTOCOLL_ERROR, but this is not implemented yet.\n", msg)
+	//   * Send GO_AWAY frame with error code (maybe msg as additional debug data)
+	//   * Shut down connection
+	fmt.Fprintf(os.Stderr, "%v Should send GOAWAY frame with error code %v, but this is not implemented yet.\n", msg, errorCode)
 }
 
 func (c *connection) handleFrameForStream(frame frames.Frame) {
-	var stream Stream
 	switch frame := frame.(type) {
 	case *frames.PushPromiseFrame:
-		method := findHeader(":method", frame.Headers)
-		path := findHeader(":path", frame.Headers)
-		if method != "GET" {
-			fmt.Fprintf(os.Stderr, "ERROR: %v with method %v not supported.", frame.Type(), method)
-			return
-		}
-		stream = c.getOrCreateStream(frame.PromisedStreamId)
-		c.promisedStreamIDs[path] = frame.PromisedStreamId
-	default:
-		stream = c.getOrCreateStream(frame.GetStreamId())
-	}
-	switch frame := frame.(type) {
+		c.handleIncomingPushPromiseFrame(frame)
 	case *frames.DataFrame:
-		c.flowControlForIncomingDataFrame(frame)
+		c.handleIncomingDataFrame(frame)
+	case *frames.RstStreamFrame:
+		c.handleIncomingRstStreamFrame(frame)
+	default:
+		c.getOrCreateStream(frame.GetStreamId()).receiveFrame(frame)
 	}
-	stream.handleIncomingFrame(frame)
+}
+
+func (c *connection) handleIncomingDataFrame(frame *frames.DataFrame) {
+	c.flowControlForIncomingDataFrame(frame)
+	c.getOrCreateStream(frame.StreamId).receiveFrame(frame)
+}
+
+func (c *connection) handleIncomingRstStreamFrame(frame *frames.RstStreamFrame) {
+	stream := c.getOrCreateStream(frame.GetStreamId())
+	if stream.GetState().In(streamstate.IDLE) {
+		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v for strem in IDLE state.", frame.Type()))
+	} else {
+		stream.receiveFrame(frame)
+	}
+}
+
+func (c *connection) handleIncomingPushPromiseFrame(frame *frames.PushPromiseFrame) {
+	stream, exists := c.getStreamIfExists(frame.StreamId)
+	if !exists {
+		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v frame for non-existing associated stream %v.", frame.Type(), frame.StreamId))
+		return
+	}
+	if !stream.GetState().In(streamstate.OPEN, streamstate.HALF_CLOSED_REMOTE) {
+		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v frame for associated stream in state %v.", frame.Type(), stream.state))
+		return
+	}
+	stream = c.getOrCreateStream(frame.PromisedStreamId)
+	stream.receiveFrame(frame)
+	method := findHeader(":method", frame.Headers)
+	path := findHeader(":path", frame.Headers)
+	if method != "GET" {
+		stream.closeWithError(frames.REFUSED_STREAM, fmt.Sprintf("%v with method %v not supported.", frame.Type(), method))
+		return
+	}
+	c.promisedStreamIDs[path] = frame.PromisedStreamId
 }
 
 func findHeader(name string, headers []hpack.HeaderField) string {
@@ -313,6 +340,8 @@ func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
 		s.initialSendWindowSizeForNewStreams = frames.SETTINGS_INITIAL_WINDOW_SIZE.Get(frame)
 	}
 	// TODO: Implement other settings, like HEADER_TABLE_SIZE.
+	// TODO: Send ACK
+	// TODO: Send PROTOCOL_ERROR if ACK is set but length > 0
 }
 
 func (c *connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
@@ -352,15 +381,15 @@ func (c *connection) write(frame frames.Frame) {
 }
 
 func (c *connection) getOrCreateStream(streamId uint32) *stream {
-	stream, ok := c.streams[streamId]
-	if !ok {
+	stream, exists := c.getStreamIfExists(streamId)
+	if !exists {
 		stream = newStream(streamId, nil, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c)
 		c.streams[streamId] = stream
 	}
 	return stream
 }
 
-func (c *connection) GetStreamIfExists(streamId uint32) (*stream, bool) {
+func (c *connection) getStreamIfExists(streamId uint32) (*stream, bool) {
 	stream, exists := c.streams[streamId]
 	return stream, exists
 }
