@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/message"
+	"github.com/fstab/h2c/http2client/internal/stream"
 	"github.com/fstab/h2c/http2client/internal/streamstate"
 	"github.com/fstab/h2c/http2client/internal/util"
 	"golang.org/x/net/http2/hpack"
@@ -17,25 +18,19 @@ const CLIENT_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
 // Some of these methods may no longer be needed after the last refactoring. Need to clean up.
 type Connection interface {
-	Host() string
-	Port() int
-	Error() error
-	Shutdown()
-	IsShutdown() bool
-	NewStream(request message.HttpRequest) Stream
-	ServerFrameSize() uint32
-	FindStreamCreatedWithPushPromise(path string) Stream
 	HandleIncomingFrame(frame frames.Frame)
-	ReadNextFrame() (frames.Frame, error)
 	HandleHttpRequest(request message.HttpRequest)
 	HandleMonitoringRequest(request message.MonitoringRequest)
 	HandlePingRequest(request message.PingRequest)
+	ReadNextFrame() (frames.Frame, error)
+	Shutdown()
+	IsShutdown() bool
 }
 
 type connection struct {
 	info                       *info
 	settings                   *settings
-	streams                    map[uint32]*stream // StreamID -> *stream
+	streams                    map[uint32]stream.Stream // StreamID -> *stream
 	nextPingId                 uint64
 	pendingPingRequests        map[uint64]message.PingRequest
 	promisedStreamIDs          map[string]uint32 // Push Promise Path -> StreamID
@@ -84,13 +79,13 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 		return nil, fmt.Errorf("Failed to write client preface to %v: %v", hostAndPort, err.Error())
 	}
 	c := newConnection(conn, host, port, incomingFrameFilters, outgoingFrameFilters)
-	c.write(frames.NewSettingsFrame(0))
+	c.Write(frames.NewSettingsFrame(0))
 	return c, nil
 }
 
 func (conn *connection) HandleHttpRequest(request message.HttpRequest) {
-	if conn.Error() != nil {
-		request.CompleteWithError(conn.Error())
+	if conn.error() != nil {
+		request.CompleteWithError(conn.error())
 	}
 	switch request.GetHeader(":method") {
 	case "GET":
@@ -105,7 +100,7 @@ func (conn *connection) HandleHttpRequest(request message.HttpRequest) {
 }
 
 func (conn *connection) handleGetRequest(request message.HttpRequest) {
-	stream := conn.FindStreamCreatedWithPushPromise(request.GetHeader(":path"))
+	stream := conn.findStreamCreatedWithPushPromise(request.GetHeader(":path"))
 	if stream != nil {
 		// Don't need to send request, because PUSH_PROMISE for this request already arrived.
 		err := stream.AssociateWithRequest(request)
@@ -126,18 +121,18 @@ func (conn *connection) handlePostRequest(request message.HttpRequest) {
 }
 
 func (conn *connection) doRequest(request message.HttpRequest) {
-	stream := conn.NewStream(request)
+	stream := conn.newStream(request)
 	headersFrame := frames.NewHeadersFrame(stream.StreamId(), request.GetHeaders())
 	headersFrame.EndStream = request.GetData() == nil
-	stream.sendFrame(headersFrame)
+	stream.SendFrame(headersFrame)
 	if request.GetData() != nil {
 		conn.sendDataFrames(request.GetData(), stream)
 	}
 }
 
-func (conn *connection) sendDataFrames(data []byte, stream Stream) {
+func (conn *connection) sendDataFrames(data []byte, stream stream.Stream) {
 	// chunkSize := uint32(len(data)) // use this to provoke GOAWAY frame with FRAME_SIZE_ERROR
-	chunkSize := conn.ServerFrameSize() // TODO: Query chunk size with each iteration -> allow changes during loop
+	chunkSize := conn.serverFrameSize() // TODO: Query chunk size with each iteration -> allow changes during loop
 	nChunksSent := uint32(0)
 	total := uint32(len(data))
 	for nChunksSent*chunkSize < total {
@@ -145,7 +140,7 @@ func (conn *connection) sendDataFrames(data []byte, stream Stream) {
 		nChunksSent = nChunksSent + 1
 		isLast := nChunksSent*chunkSize >= total
 		dataFrame := frames.NewDataFrame(stream.StreamId(), nextChunk, isLast)
-		stream.sendFrame(dataFrame)
+		stream.SendFrame(dataFrame)
 	}
 }
 
@@ -164,7 +159,7 @@ func (c *connection) HandleMonitoringRequest(request message.MonitoringRequest) 
 	request.CompleteSuccessfully(response)
 }
 
-func (c *connection) FindStreamCreatedWithPushPromise(path string) Stream {
+func (c *connection) findStreamCreatedWithPushPromise(path string) stream.Stream {
 	streamId, exists := c.promisedStreamIDs[path]
 	if exists {
 		delete(c.promisedStreamIDs, path)
@@ -178,7 +173,7 @@ func (c *connection) HandlePingRequest(request message.PingRequest) {
 	pingFrame := frames.NewPingFrame(0, c.nextPingId, false)
 	c.nextPingId = c.nextPingId + 1
 	c.pendingPingRequests[pingFrame.Payload] = request
-	c.write(pingFrame)
+	c.Write(pingFrame)
 }
 
 func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) *connection {
@@ -192,7 +187,7 @@ func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []
 			initialSendWindowSizeForNewStreams:    2<<15 - 1, // Initial flow-control window size for new streams is 65,535 octets.
 			initialReceiveWindowSizeForNewStreams: 2<<15 - 1,
 		},
-		streams:                    make(map[uint32]*stream),
+		streams:                    make(map[uint32]stream.Stream),
 		pendingPingRequests:        make(map[uint64]message.PingRequest),
 		promisedStreamIDs:          make(map[string]uint32),
 		isShutdown:                 false,
@@ -237,7 +232,7 @@ func (c *connection) handleFrameForConnection(frame frames.Frame) {
 			}
 		} else {
 			pingFrame := frames.NewPingFrame(0, frame.Payload, true)
-			c.write(pingFrame)
+			c.Write(pingFrame)
 		}
 	case *frames.WindowUpdateFrame:
 		c.handleWindowUpdateFrame(frame)
@@ -266,13 +261,13 @@ func (c *connection) handleFrameForStream(frame frames.Frame) {
 	case *frames.RstStreamFrame:
 		c.handleIncomingRstStreamFrame(frame)
 	default:
-		c.getOrCreateStream(frame.GetStreamId()).receiveFrame(frame)
+		c.getOrCreateStream(frame.GetStreamId()).ReceiveFrame(frame)
 	}
 }
 
 func (c *connection) handleIncomingDataFrame(frame *frames.DataFrame) {
 	c.flowControlForIncomingDataFrame(frame)
-	c.getOrCreateStream(frame.StreamId).receiveFrame(frame)
+	c.getOrCreateStream(frame.StreamId).ReceiveFrame(frame)
 }
 
 func (c *connection) handleIncomingRstStreamFrame(frame *frames.RstStreamFrame) {
@@ -280,7 +275,7 @@ func (c *connection) handleIncomingRstStreamFrame(frame *frames.RstStreamFrame) 
 	if stream.GetState().In(streamstate.IDLE) {
 		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v for strem in IDLE state.", frame.Type()))
 	} else {
-		stream.receiveFrame(frame)
+		stream.ReceiveFrame(frame)
 	}
 }
 
@@ -291,15 +286,15 @@ func (c *connection) handleIncomingPushPromiseFrame(frame *frames.PushPromiseFra
 		return
 	}
 	if !stream.GetState().In(streamstate.OPEN, streamstate.HALF_CLOSED_REMOTE) {
-		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v frame for associated stream in state %v.", frame.Type(), stream.state))
+		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v frame for associated stream in state %v.", frame.Type(), stream.GetState()))
 		return
 	}
 	stream = c.getOrCreateStream(frame.PromisedStreamId)
-	stream.receiveFrame(frame)
+	stream.ReceiveFrame(frame)
 	method := findHeader(":method", frame.Headers)
 	path := findHeader(":path", frame.Headers)
 	if method != "GET" {
-		stream.closeWithError(frames.REFUSED_STREAM, fmt.Sprintf("%v with method %v not supported.", frame.Type(), method))
+		stream.CloseWithError(frames.REFUSED_STREAM, fmt.Sprintf("%v with method %v not supported.", frame.Type(), method))
 		return
 	}
 	c.promisedStreamIDs[path] = frame.PromisedStreamId
@@ -322,7 +317,7 @@ func (c *connection) flowControlForIncomingDataFrame(frame *frames.DataFrame) {
 	if c.remainingReceiveWindowSize < threshold {
 		diff := int64(2<<15-1) - c.remainingReceiveWindowSize
 		c.remainingReceiveWindowSize += diff
-		c.write(frames.NewWindowUpdateFrame(0, uint32(diff)))
+		c.Write(frames.NewWindowUpdateFrame(0, uint32(diff)))
 	}
 }
 
@@ -347,15 +342,15 @@ func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
 func (c *connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
 	c.increaseFlowControlWindow(int64(frame.WindowSizeIncrement))
 	for _, s := range c.streams {
-		s.processPendingDataFrames()
+		s.ProcessPendingDataFrames()
 	}
 }
 
-func (c *connection) remainingFlowControlWindowIsEnough(nBytesToWrite int64) bool {
+func (c *connection) RemainingFlowControlWindowIsEnough(nBytesToWrite int64) bool {
 	return c.remainingReceiveWindowSize > nBytesToWrite
 }
 
-func (c *connection) decreaseFlowControlWindow(nBytesToWrite int64) {
+func (c *connection) DecreaseFlowControlWindow(nBytesToWrite int64) {
 	c.remainingSendWindowSize -= nBytesToWrite
 }
 
@@ -363,7 +358,7 @@ func (c *connection) increaseFlowControlWindow(nBytes int64) {
 	c.remainingSendWindowSize += nBytes
 }
 
-func (c *connection) write(frame frames.Frame) {
+func (c *connection) Write(frame frames.Frame) {
 	encodedFrame, err := frame.Encode(c.encodingContext)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to encode frame: %v", err.Error())
@@ -380,21 +375,21 @@ func (c *connection) write(frame frames.Frame) {
 	}
 }
 
-func (c *connection) getOrCreateStream(streamId uint32) *stream {
-	stream, exists := c.getStreamIfExists(streamId)
+func (c *connection) getOrCreateStream(streamId uint32) stream.Stream {
+	result, exists := c.getStreamIfExists(streamId)
 	if !exists {
-		stream = newStream(streamId, nil, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c)
-		c.streams[streamId] = stream
+		result = stream.New(streamId, nil, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c)
+		c.streams[streamId] = result
 	}
-	return stream
+	return result
 }
 
-func (c *connection) getStreamIfExists(streamId uint32) (*stream, bool) {
+func (c *connection) getStreamIfExists(streamId uint32) (stream.Stream, bool) {
 	stream, exists := c.streams[streamId]
 	return stream, exists
 }
 
-func (c *connection) NewStream(request message.HttpRequest) Stream {
+func (c *connection) newStream(request message.HttpRequest) stream.Stream {
 	// Streams initiated by the client must use odd-numbered stream identifiers.
 	streamIdsInUse := make([]uint32, len(c.streams))
 	for id, _ := range c.streams {
@@ -406,7 +401,7 @@ func (c *connection) NewStream(request message.HttpRequest) Stream {
 	if len(streamIdsInUse) > 0 {
 		nextStreamId = max(streamIdsInUse) + 2
 	}
-	c.streams[nextStreamId] = newStream(nextStreamId, request, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c)
+	c.streams[nextStreamId] = stream.New(nextStreamId, request, c.settings.initialSendWindowSizeForNewStreams, c.settings.initialReceiveWindowSizeForNewStreams, c)
 	return c.streams[nextStreamId]
 }
 
@@ -423,23 +418,23 @@ func max(numbers []uint32) uint32 {
 	return result
 }
 
-func (c *connection) ServerFrameSize() uint32 {
+func (c *connection) serverFrameSize() uint32 {
 	return c.settings.serverFrameSize
 }
 
-func (c *connection) SetServerFrameSize(size uint32) {
+func (c *connection) setServerFrameSize(size uint32) {
 	c.settings.serverFrameSize = size
 }
 
-func (c *connection) Host() string {
+func (c *connection) host() string {
 	return c.info.host
 }
 
-func (c *connection) Port() int {
+func (c *connection) port() int {
 	return c.info.port
 }
 
-func (c *connection) Error() error {
+func (c *connection) error() error {
 	return c.err
 }
 
