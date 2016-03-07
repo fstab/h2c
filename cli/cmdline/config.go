@@ -106,6 +106,13 @@ var (
 		maxArgs:     0,
 		usage:       "h2c pid",
 	}
+	STREAM_INFO_COMMAND = &command{
+		name:        "stream-info",
+		description: "List streams and their status.",
+		minArgs:     0,
+		maxArgs:     0,
+		usage:       "h2c stream-info",
+	}
 	PUSH_LIST_COMMAND = &command{
 		name:        "push-list",
 		description: "List responses that are available as push promises.",
@@ -153,6 +160,7 @@ var commands = []*command{
 	PING_COMMAND,
 	PID_COMMAND,
 	PUSH_LIST_COMMAND,
+	STREAM_INFO_COMMAND,
 	STOP_COMMAND,
 	WIRETAP_COMMAND,
 	VERSION_COMMAND,
@@ -215,6 +223,13 @@ var (
 		long:        "--include",
 		description: "Show response headers in the output.",
 		commands:    []*command{GET_COMMAND, PUT_COMMAND, POST_COMMAND},
+		hasParam:    false,
+	}
+	INCLUDE_CLOSED_STREAMS_OPTION = &option{
+		short:       "-c",
+		long:        "--closed",
+		description: "Include closed streams.",
+		commands:    []*command{STREAM_INFO_COMMAND},
 		hasParam:    false,
 	}
 	TIMEOUT_OPTION = &option{
@@ -294,6 +309,7 @@ var options = []*option{
 	INCLUDE_FRAMES_OPTION,
 	EXCLUDE_FRAMES_OPTION,
 	INCLUDE_HEADERS_OPTION,
+	INCLUDE_CLOSED_STREAMS_OPTION,
 	TIMEOUT_OPTION,
 	CONTENT_TYPE_OPTION,
 	HELP_OPTION,

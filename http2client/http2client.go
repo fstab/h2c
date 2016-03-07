@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/eventloop"
-	"github.com/fstab/h2c/http2client/internal/message"
+	"github.com/fstab/h2c/http2client/internal/eventloop/userEvent"
 	"github.com/fstab/h2c/http2client/internal/util"
 	"golang.org/x/net/http2/hpack"
 	neturl "net/url"
@@ -114,7 +114,7 @@ func (h2c *Http2Client) putOrPostOrGet(method string, path string, data []byte, 
 	if !h2c.urlMatchesCurrentConnection(url) {
 		return "", fmt.Errorf("Cannot query %v while connected to %v", url.Scheme+"://"+url.Host, "https://"+hostAndPortString(h2c.loop.Host, h2c.loop.Port))
 	}
-	request := message.NewRequest(method, url)
+	request := userEvent.NewRequest(method, url)
 	for _, header := range h2c.customHeaders {
 		request.AddHeader(header.Name, header.Value)
 	}
@@ -192,13 +192,48 @@ func (h2c *Http2Client) PushList() (string, error) {
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected.")
 	}
-	request := message.NewMonitoringRequest()
+	request := userEvent.NewMonitoringRequest()
 	h2c.loop.MonitoringRequests <- request
 	response, err := request.AwaitCompletion(10)
 	if err != nil {
 		return "", err
 	}
-	return strings.Join(response.AvailablePushResponses(), "\n"), nil
+	result := ""
+	for _, info := range response.StreamInfo() {
+		if result != "" {
+			result = result + "\n"
+		}
+		if info.IsCachedPushPromise {
+			result = result + info.Path
+		}
+	}
+	return result, nil
+}
+
+func (h2c *Http2Client) StreamInfo(includeClosedStreams bool) (string, error) {
+	if h2c.err != nil {
+		return "", h2c.err
+	}
+	if !h2c.isConnected() {
+		return "", fmt.Errorf("Not connected.")
+	}
+	request := userEvent.NewMonitoringRequest()
+	h2c.loop.MonitoringRequests <- request
+	response, err := request.AwaitCompletion(10)
+	if err != nil {
+		return "", err
+	}
+	result := ""
+	for _, info := range response.StreamInfo() {
+		if result != "" {
+			result = result + "\n"
+		}
+		result = result + fmt.Sprintf("%v: %v %v %v", info.StreamId, info.HttpMethod, info.Path, info.State)
+		if info.IsCachedPushPromise {
+			result = result + " (cached push promise)"
+		}
+	}
+	return result, nil
 }
 
 func (h2c *Http2Client) SetHeader(name, value string) (string, error) {
@@ -216,7 +251,7 @@ func (h2c *Http2Client) PingOnce() (string, error) {
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected. Run 'h2c connect' first.")
 	}
-	ping := message.NewPingRequest()
+	ping := userEvent.NewPingRequest()
 	h2c.loop.PingRequests <- ping
 	_, err := ping.AwaitCompletion(10) // TODO: Hard-coded timeout in seconds.
 	if err != nil {

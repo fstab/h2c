@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
-	"github.com/fstab/h2c/http2client/internal/message"
+	"github.com/fstab/h2c/http2client/internal/eventloop/userEvent"
 	"github.com/fstab/h2c/http2client/internal/stream"
 	"github.com/fstab/h2c/http2client/internal/streamstate"
 	"github.com/fstab/h2c/http2client/internal/util"
@@ -19,9 +19,9 @@ const CLIENT_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 // Some of these methods may no longer be needed after the last refactoring. Need to clean up.
 type Connection interface {
 	HandleIncomingFrame(frame frames.Frame)
-	HandleHttpRequest(request message.HttpRequest)
-	HandleMonitoringRequest(request message.MonitoringRequest)
-	HandlePingRequest(request message.PingRequest)
+	HandleHttpRequest(request userEvent.HttpRequest)
+	HandleMonitoringRequest(request userEvent.MonitoringRequest)
+	HandlePingRequest(request userEvent.PingRequest)
 	ReadNextFrame() (frames.Frame, error)
 	Shutdown()
 	IsShutdown() bool
@@ -31,9 +31,9 @@ type connection struct {
 	info                       *info
 	settings                   *settings
 	streams                    map[uint32]stream.Stream // StreamID -> *stream
+	promisedStreamCache        map[uint32]stream.Stream // StreamID -> *stream
 	nextPingId                 uint64
-	pendingPingRequests        map[uint64]message.PingRequest
-	promisedStreamIDs          map[string]uint32 // Push Promise Path -> StreamID
+	pendingPingRequests        map[uint64]userEvent.PingRequest
 	conn                       net.Conn
 	isShutdown                 bool
 	encodingContext            *frames.EncodingContext
@@ -83,7 +83,7 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 	return c, nil
 }
 
-func (conn *connection) HandleHttpRequest(request message.HttpRequest) {
+func (conn *connection) HandleHttpRequest(request userEvent.HttpRequest) {
 	if conn.error() != nil {
 		request.CompleteWithError(conn.error())
 	}
@@ -99,9 +99,11 @@ func (conn *connection) HandleHttpRequest(request message.HttpRequest) {
 	}
 }
 
-func (conn *connection) handleGetRequest(request message.HttpRequest) {
+func (conn *connection) handleGetRequest(request userEvent.HttpRequest) {
 	stream := conn.findStreamCreatedWithPushPromise(request.GetHeader(":path"))
 	if stream != nil {
+		// Remove from cache -> Push Promises only used once
+		delete(conn.promisedStreamCache, stream.StreamId())
 		// Don't need to send request, because PUSH_PROMISE for this request already arrived.
 		err := stream.AssociateWithRequest(request)
 		if err != nil {
@@ -112,15 +114,15 @@ func (conn *connection) handleGetRequest(request message.HttpRequest) {
 	}
 }
 
-func (conn *connection) handlePutRequest(request message.HttpRequest) {
+func (conn *connection) handlePutRequest(request userEvent.HttpRequest) {
 	conn.doRequest(request)
 }
 
-func (conn *connection) handlePostRequest(request message.HttpRequest) {
+func (conn *connection) handlePostRequest(request userEvent.HttpRequest) {
 	conn.doRequest(request)
 }
 
-func (conn *connection) doRequest(request message.HttpRequest) {
+func (conn *connection) doRequest(request userEvent.HttpRequest) {
 	stream := conn.newStream(request)
 	headersFrame := frames.NewHeadersFrame(stream.StreamId(), request.GetHeaders())
 	headersFrame.EndStream = request.GetData() == nil
@@ -151,25 +153,27 @@ func min(a, b uint32) uint32 {
 	return b
 }
 
-func (c *connection) HandleMonitoringRequest(request message.MonitoringRequest) {
-	response := message.NewMonitoringResponse()
-	for path := range c.promisedStreamIDs {
-		response.AddPromisedPath(path)
+func (c *connection) HandleMonitoringRequest(request userEvent.MonitoringRequest) {
+	response := userEvent.NewMonitoringResponse()
+	for _, s := range c.streams {
+		_, isCachedPushPromise := c.promisedStreamCache[s.StreamId()]
+		response.AddStreamInfo(s.StreamId(), findHeader(":method", s.RequestHeaders()), findHeader(":path", s.RequestHeaders()), s.GetState(), isCachedPushPromise)
 	}
 	request.CompleteSuccessfully(response)
 }
 
 func (c *connection) findStreamCreatedWithPushPromise(path string) stream.Stream {
-	streamId, exists := c.promisedStreamIDs[path]
-	if exists {
-		delete(c.promisedStreamIDs, path)
-		return c.streams[streamId]
-	} else {
-		return nil
+	var result stream.Stream = nil
+	for _, stream := range c.promisedStreamCache {
+		if findHeader(":method", stream.RequestHeaders()) == "GET" &&
+			findHeader(":path", stream.RequestHeaders()) == path {
+			result = stream
+		}
 	}
+	return result
 }
 
-func (c *connection) HandlePingRequest(request message.PingRequest) {
+func (c *connection) HandlePingRequest(request userEvent.PingRequest) {
 	pingFrame := frames.NewPingFrame(0, c.nextPingId, false)
 	c.nextPingId = c.nextPingId + 1
 	c.pendingPingRequests[pingFrame.Payload] = request
@@ -188,8 +192,8 @@ func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []
 			initialReceiveWindowSizeForNewStreams: 2<<15 - 1,
 		},
 		streams:                    make(map[uint32]stream.Stream),
-		pendingPingRequests:        make(map[uint64]message.PingRequest),
-		promisedStreamIDs:          make(map[string]uint32),
+		promisedStreamCache:        make(map[uint32]stream.Stream),
+		pendingPingRequests:        make(map[uint64]userEvent.PingRequest),
 		isShutdown:                 false,
 		conn:                       conn,
 		encodingContext:            frames.NewEncodingContext(),
@@ -228,7 +232,7 @@ func (c *connection) handleFrameForConnection(frame frames.Frame) {
 			pendingPingRequest, exists := c.pendingPingRequests[frame.Payload]
 			if exists {
 				delete(c.pendingPingRequests, frame.Payload)
-				pendingPingRequest.CompleteSuccessfully(message.NewPingResponse())
+				pendingPingRequest.CompleteSuccessfully(userEvent.NewPingResponse())
 			}
 		} else {
 			pingFrame := frames.NewPingFrame(0, frame.Payload, true)
@@ -280,24 +284,23 @@ func (c *connection) handleIncomingRstStreamFrame(frame *frames.RstStreamFrame) 
 }
 
 func (c *connection) handleIncomingPushPromiseFrame(frame *frames.PushPromiseFrame) {
-	stream, exists := c.getStreamIfExists(frame.StreamId)
+	associatedStream, exists := c.getStreamIfExists(frame.StreamId)
 	if !exists {
 		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v frame for non-existing associated stream %v.", frame.Type(), frame.StreamId))
 		return
 	}
-	if !stream.GetState().In(streamstate.OPEN, streamstate.HALF_CLOSED_REMOTE) {
-		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v frame for associated stream in state %v.", frame.Type(), stream.GetState()))
+	if !associatedStream.GetState().In(streamstate.OPEN, streamstate.HALF_CLOSED_LOCAL) {
+		c.connectionError(frames.PROTOCOL_ERROR, fmt.Sprintf("Received %v frame for associated stream in state %v.", frame.Type(), associatedStream.GetState()))
 		return
 	}
-	stream = c.getOrCreateStream(frame.PromisedStreamId)
-	stream.ReceiveFrame(frame)
+	promisedStream := c.getOrCreateStream(frame.PromisedStreamId)
+	promisedStream.ReceiveFrame(frame)
 	method := findHeader(":method", frame.Headers)
-	path := findHeader(":path", frame.Headers)
 	if method != "GET" {
-		stream.CloseWithError(frames.REFUSED_STREAM, fmt.Sprintf("%v with method %v not supported.", frame.Type(), method))
+		promisedStream.CloseWithError(frames.REFUSED_STREAM, fmt.Sprintf("%v with method %v not supported.", frame.Type(), method))
 		return
 	}
-	c.promisedStreamIDs[path] = frame.PromisedStreamId
+	c.promisedStreamCache[promisedStream.StreamId()] = promisedStream
 }
 
 func findHeader(name string, headers []hpack.HeaderField) string {
@@ -389,7 +392,7 @@ func (c *connection) getStreamIfExists(streamId uint32) (stream.Stream, bool) {
 	return stream, exists
 }
 
-func (c *connection) newStream(request message.HttpRequest) stream.Stream {
+func (c *connection) newStream(request userEvent.HttpRequest) stream.Stream {
 	// Streams initiated by the client must use odd-numbered stream identifiers.
 	streamIdsInUse := make([]uint32, len(c.streams))
 	for id, _ := range c.streams {

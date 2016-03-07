@@ -43,7 +43,7 @@ func HandleIncomingFrame(stream stateful, frame frames.Frame) *StreamStateError 
 			}
 		}
 	case *frames.HeadersFrame:
-		if !stream.GetState().In(OPEN, HALF_CLOSED_LOCAL, RESERVED_REMOTE) {
+		if !stream.GetState().In(IDLE, OPEN, HALF_CLOSED_LOCAL, RESERVED_REMOTE) {
 			return newStreamStateError("Received %v frame for stream in state %v.", frame.Type(), stream.GetState())
 		}
 		if stream.GetState() == RESERVED_REMOTE {
@@ -98,7 +98,12 @@ func HandleOutgoingFrame(stream stateful, frame frames.Frame) {
 			}
 		}
 	case *frames.RstStreamFrame:
-		state.MustNotBeIn(IDLE)
+		//state.MustNotBeIn(IDLE)
+		// TODO: The spec says, RST_STREAM frames MUST NOT be sent for a stream in the "idle" state.
+		// However, with our current implementation when we receive a frame (for example DATA)
+		// for an unknown stream ID, a new stream is created on the fly in state IDLE,
+		// and when the new stream processes the DATA frame it will trigger RST_STREAM in state IDLE.
+		// This should be fixed so that we implement the spec.
 		stream.SetState(CLOSED)
 	}
 }

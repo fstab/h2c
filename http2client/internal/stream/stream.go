@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
-	"github.com/fstab/h2c/http2client/internal/message"
+	"github.com/fstab/h2c/http2client/internal/eventloop/userEvent"
 	"github.com/fstab/h2c/http2client/internal/streamstate"
 	"golang.org/x/net/http2/hpack"
 	"os"
@@ -15,15 +15,16 @@ type Stream interface {
 	GetState() streamstate.StreamState
 	SetState(state streamstate.StreamState)
 
-	// Get the received HTTP headers.
-	//	ReceivedHeaders() map[string]string
+	RequestHeaders() []hpack.HeaderField
+	// ResponseHeaders() []hpack.HeaderField
+
 	// Get the received HTTP body (concatenated payloads of DATA frames).
-	ReceivedData() []byte
+	ResponseBody() []byte
 
 	// With push promises it may happen that a stream is created before the client created an HttpRequest.
 	// This method is for associating these streams with a request.
 	// If the stream is already associated with a request, the method returns an error.
-	AssociateWithRequest(request message.HttpRequest) error
+	AssociateWithRequest(request userEvent.HttpRequest) error
 
 	// SendFrame doesn't mean the frame is sent directly.
 	// DATA frames can be postponed by flow control.
@@ -60,10 +61,11 @@ func newStreamError(format string, a ...interface{}) *streamError {
 
 type stream struct {
 	state                      streamstate.StreamState
-	receivedHeaders            []hpack.HeaderField
-	receivedData               bytes.Buffer
+	requestHeaders             []hpack.HeaderField
+	responseHeaders            []hpack.HeaderField
+	responseBody               bytes.Buffer
 	err                        *streamError // RST_STREAM sent or received.
-	request                    message.HttpRequest
+	request                    userEvent.HttpRequest
 	initialReceiveWindowSize   int64
 	remainingSendWindowSize    int64
 	remainingReceiveWindowSize int64
@@ -72,10 +74,11 @@ type stream struct {
 	out                        FlowControlledFrameWriter
 }
 
-func New(streamId uint32, request message.HttpRequest, initialSendWindowSize uint32, initialReceiveWindowSize uint32, out FlowControlledFrameWriter) *stream {
+func New(streamId uint32, request userEvent.HttpRequest, initialSendWindowSize uint32, initialReceiveWindowSize uint32, out FlowControlledFrameWriter) *stream {
 	return &stream{
 		state:                      streamstate.IDLE,
-		receivedHeaders:            make([]hpack.HeaderField, 0),
+		requestHeaders:             make([]hpack.HeaderField, 0),
+		responseHeaders:            make([]hpack.HeaderField, 0),
 		streamId:                   streamId,
 		request:                    request,
 		remainingSendWindowSize:    int64(initialSendWindowSize),
@@ -117,14 +120,14 @@ func (s *stream) ReceiveFrame(frame frames.Frame) {
 
 func (s *stream) receiveDataFrame(frame *frames.DataFrame) {
 	s.flowControlForIncomingDataFrame(frame)
-	s.appendReceivedData(frame.Data)
+	s.appendResponseBody(frame.Data)
 }
 
 func (s *stream) receiveHeadersFrame(frame *frames.HeadersFrame) {
 	if !frame.EndHeaders {
 		s.CloseWithError(frames.REFUSED_STREAM, fmt.Sprintf("Unable to process %v without the END_HEADERS flag, because CONTINUATIONs are not implemented yet.", frame.Type()))
 	} else {
-		s.addReceivedHeaders(frame.Headers...)
+		s.addResponseHeaders(frame.Headers...)
 	}
 }
 
@@ -140,7 +143,7 @@ func (s *stream) receivePushPromiseFrame(frame *frames.PushPromiseFrame) {
 	if !frame.EndHeaders {
 		s.CloseWithError(frames.REFUSED_STREAM, fmt.Sprintf("%v with multiple header frames not supported.", frame.Type()))
 	} else {
-		s.addReceivedHeaders(frame.Headers...)
+		s.addRequestHeaders(frame.Headers...)
 	}
 }
 
@@ -169,6 +172,10 @@ func (s *stream) SendFrame(frame frames.Frame) {
 		} else {
 			s.scheduleDataFrameWrite(frame)
 		}
+	case *frames.HeadersFrame:
+		s.addRequestHeaders(frame.Headers...)
+		streamstate.HandleOutgoingFrame(s, frame)
+		s.out.Write(frame)
 	default:
 		streamstate.HandleOutgoingFrame(s, frame)
 		s.out.Write(frame)
@@ -225,14 +232,20 @@ func (s *stream) popFirstPendingDataFrameWrite() *frames.DataFrame {
 	return result
 }
 
-func (s *stream) addReceivedHeaders(headers ...hpack.HeaderField) {
+func (s *stream) addRequestHeaders(headers ...hpack.HeaderField) {
 	for _, header := range headers {
-		s.receivedHeaders = append(s.receivedHeaders, header)
+		s.requestHeaders = append(s.requestHeaders, header)
 	}
 }
 
-func (s *stream) appendReceivedData(data []byte) {
-	s.receivedData.Write(data)
+func (s *stream) addResponseHeaders(headers ...hpack.HeaderField) {
+	for _, header := range headers {
+		s.responseHeaders = append(s.responseHeaders, header)
+	}
+}
+
+func (s *stream) appendResponseBody(data []byte) {
+	s.responseBody.Write(data)
 }
 
 func (s *stream) finalizeRequest() {
@@ -245,17 +258,21 @@ func (s *stream) finalizeRequest() {
 	}
 }
 
-func (s *stream) makeResponse() message.HttpResponse {
-	resp := message.NewResponse()
-	for _, header := range s.receivedHeaders {
+func (s *stream) makeResponse() userEvent.HttpResponse {
+	resp := userEvent.NewResponse()
+	for _, header := range s.responseHeaders {
 		resp.AddHeader(header.Name, header.Value)
 	}
-	resp.AddData(s.receivedData.Bytes(), false)
+	resp.AddData(s.responseBody.Bytes(), false)
 	return resp
 }
 
-func (s *stream) ReceivedData() []byte {
-	return s.receivedData.Bytes()
+func (s *stream) RequestHeaders() []hpack.HeaderField {
+	return s.requestHeaders
+}
+
+func (s *stream) ResponseBody() []byte {
+	return s.responseBody.Bytes()
 }
 
 func (s *stream) StreamId() uint32 {
@@ -270,7 +287,7 @@ func (s *stream) SetState(state streamstate.StreamState) {
 	s.state = state
 }
 
-func (s *stream) AssociateWithRequest(request message.HttpRequest) error {
+func (s *stream) AssociateWithRequest(request userEvent.HttpRequest) error {
 	if s.request != nil {
 		return fmt.Errorf("Trying to set more than one request for a stream.")
 	}

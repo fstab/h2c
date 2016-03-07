@@ -93,6 +93,8 @@ func execute(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 		return executePing(h2c, cmd)
 	case cmdline.PUSH_LIST_COMMAND.Name():
 		return executePushList(h2c, cmd)
+	case cmdline.STREAM_INFO_COMMAND.Name():
+		return executeStreamInfo(h2c, cmd)
 	case cmdline.SET_COMMAND.Name():
 		return h2c.SetHeader(cmd.Args[0], cmd.Args[1])
 	case cmdline.UNSET_COMMAND.Name():
@@ -170,6 +172,10 @@ func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) 
 
 func executePushList(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
 	return h2c.PushList()
+}
+
+func executeStreamInfo(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
+	return h2c.StreamInfo(cmdline.INCLUDE_CLOSED_STREAMS_OPTION.IsSet(cmd.Options))
 }
 
 func executePing(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
