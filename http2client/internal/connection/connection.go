@@ -22,7 +22,7 @@ type Connection interface {
 	HandleIncomingFrame(frame frames.Frame)
 	ExecuteHttpCommand(cmd *commands.HttpCommand)
 	ExecuteMonitoringCommand(cmd *commands.MonitoringCommand)
-	HandlePingRequest(request commands.PingRequest)
+	ExecutePingCommand(cmd *commands.PingCommand)
 	ReadNextFrame() (frames.Frame, error)
 	Shutdown()
 	IsShutdown() bool
@@ -34,7 +34,7 @@ type connection struct {
 	streams                    map[uint32]stream.Stream // StreamID -> *stream
 	promisedStreamCache        map[uint32]stream.Stream // StreamID -> *stream
 	nextPingId                 uint64
-	pendingPingRequests        map[uint64]commands.PingRequest
+	pendingPingCommands        map[uint64]*commands.PingCommand
 	conn                       net.Conn
 	isShutdown                 bool
 	encodingContext            *frames.EncodingContext
@@ -175,10 +175,10 @@ func (c *connection) findStreamCreatedWithPushPromise(path string) stream.Stream
 	return result
 }
 
-func (c *connection) HandlePingRequest(request commands.PingRequest) {
+func (c *connection) ExecutePingCommand(cmd *commands.PingCommand) {
 	pingFrame := frames.NewPingFrame(0, c.nextPingId, false)
 	c.nextPingId = c.nextPingId + 1
-	c.pendingPingRequests[pingFrame.Payload] = request
+	c.pendingPingCommands[pingFrame.Payload] = cmd
 	c.Write(pingFrame)
 }
 
@@ -195,7 +195,7 @@ func newConnection(conn net.Conn, host string, port int, incomingFrameFilters []
 		},
 		streams:                    make(map[uint32]stream.Stream),
 		promisedStreamCache:        make(map[uint32]stream.Stream),
-		pendingPingRequests:        make(map[uint64]commands.PingRequest),
+		pendingPingCommands:        make(map[uint64]*commands.PingCommand),
 		isShutdown:                 false,
 		conn:                       conn,
 		encodingContext:            frames.NewEncodingContext(),
@@ -231,10 +231,10 @@ func (c *connection) handleFrameForConnection(frame frames.Frame) {
 		c.settings.handleSettingsFrame(frame)
 	case *frames.PingFrame:
 		if frame.Ack {
-			pendingPingRequest, exists := c.pendingPingRequests[frame.Payload]
+			pendingPingCommand, exists := c.pendingPingCommands[frame.Payload]
 			if exists {
-				delete(c.pendingPingRequests, frame.Payload)
-				pendingPingRequest.CompleteSuccessfully(commands.NewPingResponse())
+				delete(c.pendingPingCommands, frame.Payload)
+				pendingPingCommand.CompleteSuccessfully()
 			}
 		} else {
 			pingFrame := frames.NewPingFrame(0, frame.Payload, true)

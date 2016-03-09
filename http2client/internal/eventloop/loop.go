@@ -11,7 +11,7 @@ import (
 type Loop struct {
 	HttpCommands       chan (*commands.HttpCommand)
 	MonitoringCommands chan (*commands.MonitoringCommand)
-	PingRequests       chan (commands.PingRequest)
+	PingCommands       chan (*commands.PingCommand)
 	IncomingFrames     chan (frames.Frame)
 	Shutdown           chan (bool)
 	Host               string
@@ -42,7 +42,7 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 	l := &Loop{
 		HttpCommands:       make(chan (*commands.HttpCommand)),
 		MonitoringCommands: make(chan (*commands.MonitoringCommand)),
-		PingRequests:       make(chan (commands.PingRequest)),
+		PingCommands:       make(chan (*commands.PingCommand)),
 		IncomingFrames:     make(chan (frames.Frame)),
 		Shutdown:           make(chan (bool)),
 		Host:               host,
@@ -62,8 +62,8 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 				conn.HandleIncomingFrame(frame)
 			case cmd := <-l.HttpCommands:
 				conn.ExecuteHttpCommand(cmd)
-			case request := <-l.PingRequests:
-				conn.HandlePingRequest(request)
+			case cmd := <-l.PingCommands:
+				conn.ExecutePingCommand(cmd)
 			case cmd := <-l.MonitoringCommands:
 				conn.ExecuteMonitoringCommand(cmd)
 			case <-l.Shutdown:

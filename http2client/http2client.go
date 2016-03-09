@@ -251,13 +251,9 @@ func (h2c *Http2Client) PingOnce() (string, error) {
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected. Run 'h2c connect' first.")
 	}
-	ping := commands.NewPingRequest()
-	h2c.loop.PingRequests <- ping
-	_, err := ping.AwaitCompletion(10) // TODO: Hard-coded timeout in seconds.
-	if err != nil {
-		return "", err
-	}
-	return "", nil
+	pingCmd := commands.NewPingCommand()
+	h2c.loop.PingCommands <- pingCmd
+	return "", pingCmd.AwaitCompletion(10) // TODO: Hard-coded timeout in seconds.
 }
 
 func (h2c *Http2Client) PingRepeatedly(interval time.Duration) (string, error) {

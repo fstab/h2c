@@ -1,51 +1,27 @@
 package commands
 
 import (
-	"fmt"
 	"github.com/fstab/h2c/http2client/internal/util"
 )
 
-type PingRequest interface {
-	CompleteWithError(err error)
-	CompleteSuccessfully(resp PingResponse)
-	AwaitCompletion(timeoutInSeconds int) (PingResponse, error)
-}
-
-type PingResponse interface{}
-
-type pingRequest struct {
-	response PingResponse
+type PingCommand struct {
 	callback *util.AsyncTask
 }
 
-type pingResponse struct{}
-
-func NewPingRequest() PingRequest {
-	return &pingRequest{
+func NewPingCommand() *PingCommand {
+	return &PingCommand{
 		callback: util.NewAsyncTask(),
 	}
 }
 
-func NewPingResponse() PingResponse {
-	return &pingResponse{}
+func (cmd *PingCommand) CompleteWithError(err error) {
+	cmd.callback.CompleteWithError(err)
 }
 
-func (req *pingRequest) CompleteWithError(err error) {
-	req.callback.CompleteWithError(err)
+func (cmd *PingCommand) CompleteSuccessfully() {
+	cmd.callback.CompleteSuccessfully()
 }
 
-func (req *pingRequest) CompleteSuccessfully(resp PingResponse) {
-	req.response = resp
-	req.callback.CompleteSuccessfully()
-}
-
-func (req *pingRequest) AwaitCompletion(timeoutInSeconds int) (PingResponse, error) {
-	err := req.callback.WaitForCompletion(timeoutInSeconds)
-	if err != nil {
-		return nil, err
-	}
-	if req.response == nil {
-		return nil, fmt.Errorf("Request got no error and no response. This is a bug.")
-	}
-	return req.response, nil
+func (cmd *PingCommand) AwaitCompletion(timeoutInSeconds int) error {
+	return cmd.callback.WaitForCompletion(timeoutInSeconds)
 }
