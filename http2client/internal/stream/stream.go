@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
-	"github.com/fstab/h2c/http2client/internal/eventloop/userEvent"
+	"github.com/fstab/h2c/http2client/internal/eventloop/commands"
 	"github.com/fstab/h2c/http2client/internal/streamstate"
 	"golang.org/x/net/http2/hpack"
 	"os"
@@ -24,7 +24,7 @@ type Stream interface {
 	// With push promises it may happen that a stream is created before the client created an HttpRequest.
 	// This method is for associating these streams with a request.
 	// If the stream is already associated with a request, the method returns an error.
-	AssociateWithRequest(request userEvent.HttpRequest) error
+	AssociateWithCommand(cmd *commands.HttpCommand) error
 
 	// SendFrame doesn't mean the frame is sent directly.
 	// DATA frames can be postponed by flow control.
@@ -65,7 +65,7 @@ type stream struct {
 	responseHeaders            []hpack.HeaderField
 	responseBody               bytes.Buffer
 	err                        *streamError // RST_STREAM sent or received.
-	request                    userEvent.HttpRequest
+	cmd                        *commands.HttpCommand
 	initialReceiveWindowSize   int64
 	remainingSendWindowSize    int64
 	remainingReceiveWindowSize int64
@@ -74,13 +74,13 @@ type stream struct {
 	out                        FlowControlledFrameWriter
 }
 
-func New(streamId uint32, request userEvent.HttpRequest, initialSendWindowSize uint32, initialReceiveWindowSize uint32, out FlowControlledFrameWriter) *stream {
+func New(streamId uint32, cmd *commands.HttpCommand, initialSendWindowSize uint32, initialReceiveWindowSize uint32, out FlowControlledFrameWriter) *stream {
 	return &stream{
-		state:                      streamstate.IDLE,
-		requestHeaders:             make([]hpack.HeaderField, 0),
-		responseHeaders:            make([]hpack.HeaderField, 0),
-		streamId:                   streamId,
-		request:                    request,
+		state:           streamstate.IDLE,
+		requestHeaders:  make([]hpack.HeaderField, 0),
+		responseHeaders: make([]hpack.HeaderField, 0),
+		streamId:        streamId,
+		cmd:             cmd,
 		remainingSendWindowSize:    int64(initialSendWindowSize),
 		initialReceiveWindowSize:   int64(initialReceiveWindowSize),
 		remainingReceiveWindowSize: int64(initialReceiveWindowSize),
@@ -114,7 +114,7 @@ func (s *stream) ReceiveFrame(frame frames.Frame) {
 		fmt.Fprintf(os.Stderr, "Received unknown frame type %v\n", frame.Type())
 	}
 	if s.state == streamstate.CLOSED && !wasClosedBefore {
-		s.finalizeRequest()
+		s.finalizeCommand()
 	}
 }
 
@@ -181,7 +181,7 @@ func (s *stream) SendFrame(frame frames.Frame) {
 		s.out.Write(frame)
 	}
 	if s.state == streamstate.CLOSED && !wasClosedBefore {
-		s.finalizeRequest()
+		s.finalizeCommand()
 	}
 }
 
@@ -248,23 +248,18 @@ func (s *stream) appendResponseBody(data []byte) {
 	s.responseBody.Write(data)
 }
 
-func (s *stream) finalizeRequest() {
-	if s.request != nil {
+func (s *stream) finalizeCommand() {
+	if s.cmd != nil {
 		if s.err != nil {
-			s.request.CompleteWithError(s.err)
+			s.cmd.CompleteWithError(s.err)
 		} else {
-			s.request.CompleteSuccessfully(s.makeResponse())
+			for _, header := range s.responseHeaders {
+				s.cmd.Response.AddHeader(header.Name, header.Value)
+			}
+			s.cmd.Response.SetBody(s.responseBody.Bytes(), false)
+			s.cmd.CompleteSuccessfully()
 		}
 	}
-}
-
-func (s *stream) makeResponse() userEvent.HttpResponse {
-	resp := userEvent.NewResponse()
-	for _, header := range s.responseHeaders {
-		resp.AddHeader(header.Name, header.Value)
-	}
-	resp.AddData(s.responseBody.Bytes(), false)
-	return resp
 }
 
 func (s *stream) RequestHeaders() []hpack.HeaderField {
@@ -287,13 +282,13 @@ func (s *stream) SetState(state streamstate.StreamState) {
 	s.state = state
 }
 
-func (s *stream) AssociateWithRequest(request userEvent.HttpRequest) error {
-	if s.request != nil {
-		return fmt.Errorf("Trying to set more than one request for a stream.")
+func (s *stream) AssociateWithCommand(cmd *commands.HttpCommand) error {
+	if s.cmd != nil {
+		return fmt.Errorf("Trying to set more than one command for a stream.")
 	}
-	s.request = request
+	s.cmd = cmd
 	if s.state == streamstate.CLOSED {
-		s.finalizeRequest()
+		s.finalizeCommand()
 	}
 	return nil
 }

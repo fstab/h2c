@@ -1,4 +1,4 @@
-package userEvent
+package commands
 
 import (
 	"fmt"

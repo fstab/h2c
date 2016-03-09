@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/eventloop"
-	"github.com/fstab/h2c/http2client/internal/eventloop/userEvent"
+	"github.com/fstab/h2c/http2client/internal/eventloop/commands"
 	"github.com/fstab/h2c/http2client/internal/util"
 	"golang.org/x/net/http2/hpack"
 	neturl "net/url"
@@ -114,26 +114,26 @@ func (h2c *Http2Client) putOrPostOrGet(method string, path string, data []byte, 
 	if !h2c.urlMatchesCurrentConnection(url) {
 		return "", fmt.Errorf("Cannot query %v while connected to %v", url.Scheme+"://"+url.Host, "https://"+hostAndPortString(h2c.loop.Host, h2c.loop.Port))
 	}
-	request := userEvent.NewRequest(method, url)
+	cmd := commands.NewHttpCommand(method, url)
 	for _, header := range h2c.customHeaders {
-		request.AddHeader(header.Name, header.Value)
+		cmd.Request.AddHeader(header.Name, header.Value)
 	}
 	if data != nil {
-		request.AddData(data, true)
+		cmd.Request.SetBody(data, true)
 	}
-	h2c.loop.HttpRequests <- request
-	response, err := request.AwaitCompletion(timeoutInSeconds)
+	h2c.loop.HttpRequests <- cmd
+	err = cmd.AwaitCompletion(timeoutInSeconds)
 	if err != nil {
 		return "", err
 	}
 	result := ""
 	if includeHeaders {
-		for _, header := range response.GetHeaders() {
+		for _, header := range cmd.Response.GetHeaders() {
 			result = result + header.Name + ": " + header.Value + "\n"
 		}
 	}
-	if response.GetData() != nil {
-		result = result + string(response.GetData())
+	if len(cmd.Response.GetBody()) > 0 {
+		result = result + string(cmd.Response.GetBody())
 	}
 	return result, nil
 }
@@ -192,7 +192,7 @@ func (h2c *Http2Client) PushList() (string, error) {
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected.")
 	}
-	request := userEvent.NewMonitoringRequest()
+	request := commands.NewMonitoringRequest()
 	h2c.loop.MonitoringRequests <- request
 	response, err := request.AwaitCompletion(10)
 	if err != nil {
@@ -217,7 +217,7 @@ func (h2c *Http2Client) StreamInfo(includeClosedStreams bool) (string, error) {
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected.")
 	}
-	request := userEvent.NewMonitoringRequest()
+	request := commands.NewMonitoringRequest()
 	h2c.loop.MonitoringRequests <- request
 	response, err := request.AwaitCompletion(10)
 	if err != nil {
@@ -251,7 +251,7 @@ func (h2c *Http2Client) PingOnce() (string, error) {
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected. Run 'h2c connect' first.")
 	}
-	ping := userEvent.NewPingRequest()
+	ping := commands.NewPingRequest()
 	h2c.loop.PingRequests <- ping
 	_, err := ping.AwaitCompletion(10) // TODO: Hard-coded timeout in seconds.
 	if err != nil {

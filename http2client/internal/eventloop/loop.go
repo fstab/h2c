@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/connection"
-	"github.com/fstab/h2c/http2client/internal/eventloop/userEvent"
+	"github.com/fstab/h2c/http2client/internal/eventloop/commands"
 	"os"
 )
 
 type Loop struct {
-	HttpRequests       chan (userEvent.HttpRequest)
-	MonitoringRequests chan (userEvent.MonitoringRequest)
-	PingRequests       chan (userEvent.PingRequest)
+	HttpRequests       chan (*commands.HttpCommand)
+	MonitoringRequests chan (commands.MonitoringRequest)
+	PingRequests       chan (commands.PingRequest)
 	IncomingFrames     chan (frames.Frame)
 	Shutdown           chan (bool)
 	Host               string
@@ -40,9 +40,9 @@ type Loop struct {
 // 2. Network Socket: Frames received from the server.
 func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) (*Loop, error) {
 	l := &Loop{
-		HttpRequests:       make(chan (userEvent.HttpRequest)),
-		MonitoringRequests: make(chan (userEvent.MonitoringRequest)),
-		PingRequests:       make(chan (userEvent.PingRequest)),
+		HttpRequests:       make(chan (*commands.HttpCommand)),
+		MonitoringRequests: make(chan (commands.MonitoringRequest)),
+		PingRequests:       make(chan (commands.PingRequest)),
 		IncomingFrames:     make(chan (frames.Frame)),
 		Shutdown:           make(chan (bool)),
 		Host:               host,
@@ -61,7 +61,7 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 			case frame := <-l.IncomingFrames:
 				conn.HandleIncomingFrame(frame)
 			case request := <-l.HttpRequests:
-				conn.HandleHttpRequest(request)
+				conn.ExecuteHttpCommand(request)
 			case request := <-l.PingRequests:
 				conn.HandlePingRequest(request)
 			case request := <-l.MonitoringRequests:
