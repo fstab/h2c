@@ -316,6 +316,7 @@ func findHeader(name string, headers []hpack.HeaderField) string {
 
 // Just a quick implementation to make large downloads work.
 // Should be replaced with a more sophisticated flow control strategy
+// TODO: This is copy-and-paste from connection
 func (c *connection) flowControlForIncomingDataFrame(frame *frames.DataFrame) {
 	threshold := int64(2 << 13) // size of one frame
 	c.remainingReceiveWindowSize -= int64(len(frame.Data))
@@ -345,21 +346,21 @@ func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
 }
 
 func (c *connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
-	c.increaseFlowControlWindow(int64(frame.WindowSizeIncrement))
+	c.increaseSendFlowControlWindow(int64(frame.WindowSizeIncrement))
 	for _, s := range c.streams {
 		s.ProcessPendingDataFrames()
 	}
 }
 
-func (c *connection) RemainingFlowControlWindowIsEnough(nBytesToWrite int64) bool {
-	return c.remainingReceiveWindowSize > nBytesToWrite
+func (c *connection) RemainingSendFlowControlWindowIsEnough(nBytesToWrite int64) bool {
+	return c.remainingSendWindowSize > nBytesToWrite
 }
 
-func (c *connection) DecreaseFlowControlWindow(nBytesToWrite int64) {
+func (c *connection) DecreaseSendFlowControlWindow(nBytesToWrite int64) {
 	c.remainingSendWindowSize -= nBytesToWrite
 }
 
-func (c *connection) increaseFlowControlWindow(nBytes int64) {
+func (c *connection) increaseSendFlowControlWindow(nBytes int64) {
 	c.remainingSendWindowSize += nBytes
 }
 
