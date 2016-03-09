@@ -9,8 +9,8 @@ import (
 )
 
 type Loop struct {
-	HttpRequests       chan (*commands.HttpCommand)
-	MonitoringRequests chan (commands.MonitoringRequest)
+	HttpCommands       chan (*commands.HttpCommand)
+	MonitoringCommands chan (*commands.MonitoringCommand)
 	PingRequests       chan (commands.PingRequest)
 	IncomingFrames     chan (frames.Frame)
 	Shutdown           chan (bool)
@@ -40,8 +40,8 @@ type Loop struct {
 // 2. Network Socket: Frames received from the server.
 func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) (*Loop, error) {
 	l := &Loop{
-		HttpRequests:       make(chan (*commands.HttpCommand)),
-		MonitoringRequests: make(chan (commands.MonitoringRequest)),
+		HttpCommands:       make(chan (*commands.HttpCommand)),
+		MonitoringCommands: make(chan (*commands.MonitoringCommand)),
 		PingRequests:       make(chan (commands.PingRequest)),
 		IncomingFrames:     make(chan (frames.Frame)),
 		Shutdown:           make(chan (bool)),
@@ -60,12 +60,12 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 			select {
 			case frame := <-l.IncomingFrames:
 				conn.HandleIncomingFrame(frame)
-			case request := <-l.HttpRequests:
-				conn.ExecuteHttpCommand(request)
+			case cmd := <-l.HttpCommands:
+				conn.ExecuteHttpCommand(cmd)
 			case request := <-l.PingRequests:
 				conn.HandlePingRequest(request)
-			case request := <-l.MonitoringRequests:
-				conn.HandleMonitoringRequest(request)
+			case cmd := <-l.MonitoringCommands:
+				conn.ExecuteMonitoringCommand(cmd)
 			case <-l.Shutdown:
 				conn.Shutdown()
 			}

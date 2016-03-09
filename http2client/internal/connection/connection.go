@@ -20,8 +20,8 @@ const CLIENT_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 // Some of these methods may no longer be needed after the last refactoring. Need to clean up.
 type Connection interface {
 	HandleIncomingFrame(frame frames.Frame)
-	ExecuteHttpCommand(request *commands.HttpCommand)
-	HandleMonitoringRequest(request commands.MonitoringRequest)
+	ExecuteHttpCommand(cmd *commands.HttpCommand)
+	ExecuteMonitoringCommand(cmd *commands.MonitoringCommand)
 	HandlePingRequest(request commands.PingRequest)
 	ReadNextFrame() (frames.Frame, error)
 	Shutdown()
@@ -156,13 +156,12 @@ func min(a, b uint32) uint32 {
 	return b
 }
 
-func (c *connection) HandleMonitoringRequest(request commands.MonitoringRequest) {
-	response := commands.NewMonitoringResponse()
+func (c *connection) ExecuteMonitoringCommand(cmd *commands.MonitoringCommand) {
 	for _, s := range c.streams {
 		_, isCachedPushPromise := c.promisedStreamCache[s.StreamId()]
-		response.AddStreamInfo(s.StreamId(), findHeader(":method", s.RequestHeaders()), findHeader(":path", s.RequestHeaders()), s.GetState(), isCachedPushPromise)
+		cmd.Result.AddStreamInfo(s.StreamId(), findHeader(":method", s.RequestHeaders()), findHeader(":path", s.RequestHeaders()), s.GetState(), isCachedPushPromise)
 	}
-	request.CompleteSuccessfully(response)
+	cmd.CompleteSuccessfully()
 }
 
 func (c *connection) findStreamCreatedWithPushPromise(path string) stream.Stream {

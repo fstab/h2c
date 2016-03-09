@@ -121,7 +121,7 @@ func (h2c *Http2Client) putOrPostOrGet(method string, path string, data []byte, 
 	if data != nil {
 		cmd.Request.SetBody(data, true)
 	}
-	h2c.loop.HttpRequests <- cmd
+	h2c.loop.HttpCommands <- cmd
 	err = cmd.AwaitCompletion(timeoutInSeconds)
 	if err != nil {
 		return "", err
@@ -192,14 +192,14 @@ func (h2c *Http2Client) PushList() (string, error) {
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected.")
 	}
-	request := commands.NewMonitoringRequest()
-	h2c.loop.MonitoringRequests <- request
-	response, err := request.AwaitCompletion(10)
+	cmd := commands.NewMonitoringCommand()
+	h2c.loop.MonitoringCommands <- cmd
+	err := cmd.AwaitCompletion(10)
 	if err != nil {
 		return "", err
 	}
 	result := ""
-	for _, info := range response.StreamInfo() {
+	for _, info := range cmd.Result.StreamInfo {
 		if result != "" {
 			result = result + "\n"
 		}
@@ -217,14 +217,14 @@ func (h2c *Http2Client) StreamInfo(includeClosedStreams bool) (string, error) {
 	if !h2c.isConnected() {
 		return "", fmt.Errorf("Not connected.")
 	}
-	request := commands.NewMonitoringRequest()
-	h2c.loop.MonitoringRequests <- request
-	response, err := request.AwaitCompletion(10)
+	cmd := commands.NewMonitoringCommand()
+	h2c.loop.MonitoringCommands <- cmd
+	err := cmd.AwaitCompletion(10)
 	if err != nil {
 		return "", err
 	}
 	result := ""
-	for _, info := range response.StreamInfo() {
+	for _, info := range cmd.Result.StreamInfo {
 		if result != "" {
 			result = result + "\n"
 		}
