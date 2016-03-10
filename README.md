@@ -48,7 +48,7 @@ How to Download and Run
 
 Binary releases are available on the [GitHub Releases](https://github.com/fstab/h2c/releases).
 
-1. Download the latest release ZIP file: [h2c-v0.0.10.zip](https://github.com/fstab/h2c/releases/download/v0.0.10/h2c-v0.0.10.zip)
+1. Download the latest release ZIP file: [h2c-v0.0.11.zip](https://github.com/fstab/h2c/releases/download/v0.0.11/h2c-v0.0.11.zip)
 2. Extract the ZIP file
 3. Find the executable for your system in the `bin` folder:
   * Linux: `h2c_linux_amd64`
