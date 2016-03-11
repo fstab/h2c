@@ -40,6 +40,7 @@ For a complete list of available commands, run `h2c --help`.
 * `h2c ping` Send a ping.
 * `h2c pid` Show the process id of the h2c process.
 * `h2c push-list` List responses that are available as push promises.
+* `h2c stream-info` List streams and their states.
 * `h2c stop` Stop the h2c process
 * `h2c wiretap <localhost:port> <remotehost:port>` Listen on localhost:port and forward all traffic to remotehost:port.
 
