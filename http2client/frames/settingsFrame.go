@@ -59,10 +59,10 @@ type SettingsFrame struct {
 	Settings map[Setting]uint32
 }
 
-func NewSettingsFrame(streamId uint32) *SettingsFrame {
+func NewSettingsFrame(streamId uint32, ack bool) *SettingsFrame {
 	return &SettingsFrame{
 		StreamId: streamId,
-		Ack:      false,
+		Ack:      ack,
 		Settings: make(map[Setting]uint32),
 	}
 }
@@ -71,7 +71,7 @@ func DecodeSettingsFrame(flags byte, streamId uint32, payload []byte, context *D
 	if len(payload)%6 != 0 {
 		return nil, fmt.Errorf("Invalid SETTINGS frame.")
 	}
-	result := NewSettingsFrame(streamId)
+	result := NewSettingsFrame(streamId, false)
 	result.Ack = SETTINGS_FLAG_ACK.isSet(flags)
 	for i := 0; i < len(payload); i += 6 {
 		setting := Setting(binary.BigEndian.Uint16(payload[i : i+2]))
