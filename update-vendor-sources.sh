@@ -9,7 +9,7 @@ export ORIG_GOPATH="$GOPATH"
 export GOPATH="$TMP_DIR"
 unset GO15VENDOREXPERIMENT
 
-# go get github.com/fstab/h2c
+go get github.com/fstab/h2c
 go get golang.org/x/net/http2/hpack
 go get github.com/fatih/color
 
