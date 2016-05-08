@@ -80,7 +80,7 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 		return nil, fmt.Errorf("Failed to write client preface to %v: %v", hostAndPort, err.Error())
 	}
 	c := newConnection(conn, host, port, incomingFrameFilters, outgoingFrameFilters)
-	c.Write(frames.NewSettingsFrame(0))
+	c.Write(frames.NewSettingsFrame(0, false))
 	return c, nil
 }
 
@@ -229,6 +229,9 @@ func (c *connection) handleFrameForConnection(frame frames.Frame) {
 	switch frame := frame.(type) {
 	case *frames.SettingsFrame:
 		c.settings.handleSettingsFrame(frame)
+		if !frame.Ack {
+			c.Write(frames.NewSettingsFrame(0, true))
+		}
 	case *frames.PingFrame:
 		if frame.Ack {
 			pendingPingCommand, exists := c.pendingPingCommands[frame.Payload]
@@ -341,7 +344,6 @@ func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
 		s.initialSendWindowSizeForNewStreams = frames.SETTINGS_INITIAL_WINDOW_SIZE.Get(frame)
 	}
 	// TODO: Implement other settings, like HEADER_TABLE_SIZE.
-	// TODO: Send ACK
 	// TODO: Send PROTOCOL_ERROR if ACK is set but length > 0
 }
 
