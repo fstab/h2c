@@ -61,8 +61,8 @@ Binary releases are available on the [GitHub Releases](https://github.com/fstab/
 How to Build from Source
 ------------------------
 
-`h2c` is developed with [go 1.6](https://golang.org/dl/). The external dependencies are located in the `vendor/` directory.
-In go 1.6, the `vendor/` directory will be used by default. In order to build `h2c` with go 1.5, you must enable the [Go 1.5 vendor handling](http://engineeredweb.com/blog/2015/go-1.5-vendor-handling/) by setting the environment variable `GO15VENDOREXPERIMENT` to `1`.
+`h2c` is developed with [Go 1.6](https://golang.org/dl/). The external dependencies are located in the `vendor/` directory.
+In Go 1.6, the `vendor/` directory will be used by default. In order to build `h2c` with go 1.5, you must enable the [Go 1.5 vendor handling](http://engineeredweb.com/blog/2015/go-1.5-vendor-handling/) by setting the environment variable `GO15VENDOREXPERIMENT` to `1`.
 
 The following command will download, compile, and install `h2c`:
 
