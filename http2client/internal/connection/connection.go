@@ -228,10 +228,7 @@ func (c *connection) HandleIncomingFrame(frame frames.Frame) {
 func (c *connection) handleFrameForConnection(frame frames.Frame) {
 	switch frame := frame.(type) {
 	case *frames.SettingsFrame:
-		c.settings.handleSettingsFrame(frame)
-		if !frame.Ack {
-			c.Write(frames.NewSettingsFrame(0, true))
-		}
+		c.handleSettingsFrame(frame)
 	case *frames.PingFrame:
 		if frame.Ack {
 			pendingPingCommand, exists := c.pendingPingCommands[frame.Payload]
@@ -330,9 +327,9 @@ func (c *connection) flowControlForIncomingDataFrame(frame *frames.DataFrame) {
 	}
 }
 
-func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
+func (c *connection) handleSettingsFrame(frame *frames.SettingsFrame) {
 	if frames.SETTINGS_MAX_FRAME_SIZE.IsSet(frame) {
-		s.serverFrameSize = (frames.SETTINGS_MAX_FRAME_SIZE.Get(frame))
+		c.settings.serverFrameSize = (frames.SETTINGS_MAX_FRAME_SIZE.Get(frame))
 	}
 	if frames.SETTINGS_INITIAL_WINDOW_SIZE.IsSet(frame) {
 		// TODO: This only covers the INITIAL_WINDOW_SIZE setting in the connection preface phase.
@@ -341,10 +338,13 @@ func (s *settings) handleSettingsFrame(frame *frames.SettingsFrame) {
 		// TODO: a receiver MUST adjust the size of all stream flow-control windows that it maintains
 		// TODO: by the difference between the new value and the old value.
 		// TODO: See Section 6.9.2 in the spec.
-		s.initialSendWindowSizeForNewStreams = frames.SETTINGS_INITIAL_WINDOW_SIZE.Get(frame)
+		c.settings.initialSendWindowSizeForNewStreams = frames.SETTINGS_INITIAL_WINDOW_SIZE.Get(frame)
 	}
 	// TODO: Implement other settings, like HEADER_TABLE_SIZE.
 	// TODO: Send PROTOCOL_ERROR if ACK is set but length > 0
+	if !frame.Ack {
+		c.Write(frames.NewSettingsFrame(0, true))
+	}
 }
 
 func (c *connection) handleWindowUpdateFrame(frame *frames.WindowUpdateFrame) {
