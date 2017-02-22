@@ -4,18 +4,22 @@ package daemon
 import (
 	"bufio"
 	"fmt"
-	"github.com/fstab/h2c/cli/cmdline"
-	"github.com/fstab/h2c/cli/rpc"
-	"github.com/fstab/h2c/cli/util"
-	"github.com/fstab/h2c/http2client"
-	"github.com/fstab/h2c/http2client/frames"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fstab/h2c/cli/cmdline"
+	"github.com/fstab/h2c/cli/rpc"
+	"github.com/fstab/h2c/cli/util"
+	"github.com/fstab/h2c/http2client"
+	"github.com/fstab/h2c/http2client/frames"
 )
 
 // Run the h2c process, i.e, the process started with 'h2c start'.
@@ -109,7 +113,8 @@ func executeConnect(h2c *http2client.Http2Client, cmd *rpc.Command) (string, err
 	if err != nil {
 		return "", err
 	}
-	return h2c.Connect(scheme, host, port)
+	hoststr := fmt.Sprintf("%v:%v", host, port)
+	return h2c.Connect(url.URL{Scheme: scheme, Host: hoststr}, nil)
 }
 
 // "https://localhost:8443" -> "https", "localhost", 8443, nil
@@ -167,7 +172,15 @@ func executeGet(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) 
 	} else {
 		timeout = 10
 	}
-	return h2c.Get(cmd.Args[0], includeHeaders, timeout)
+	uri, err := url.Parse(cmd.Args[0])
+	if err != nil {
+		return "", fmt.Errorf("unable to parse %v", cmd.Args[0])
+	}
+	req := &http.Request{Method: "GET", URL: uri}
+	resp, err := h2c.Get(req, includeHeaders, timeout)
+	result, err := httputil.DumpResponse(resp, includeHeaders)
+
+	return string(result), err
 }
 
 func executePushList(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error) {
@@ -228,7 +241,7 @@ func executePost(h2c *http2client.Http2Client, cmd *rpc.Command) (string, error)
 	return executePutOrPost(h2c, cmd, h2c.Post)
 }
 
-func executePutOrPost(h2c *http2client.Http2Client, cmd *rpc.Command, putOrPost func(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error)) (string, error) {
+func executePutOrPost(h2c *http2client.Http2Client, cmd *rpc.Command, putOrPost func(req *http.Request, data []byte, includeHeaders bool, timeoutInSeconds int) (*http.Response, error)) (string, error) {
 	includeHeaders := cmdline.INCLUDE_HEADERS_OPTION.IsSet(cmd.Options)
 	var timeout int
 	var err error
@@ -244,7 +257,15 @@ func executePutOrPost(h2c *http2client.Http2Client, cmd *rpc.Command, putOrPost 
 	if cmdline.DATA_OPTION.IsSet(cmd.Options) {
 		data = []byte(cmdline.DATA_OPTION.Get(cmd.Options))
 	}
-	return putOrPost(cmd.Args[0], data, includeHeaders, timeout)
+	uri, err := url.Parse(cmd.Args[0])
+	if err != nil {
+		return "", fmt.Errorf("unable to parse %v", cmd.Args[0])
+	}
+	req := &http.Request{Method: "GET", URL: uri}
+	resp, err := putOrPost(req, data, includeHeaders, timeout)
+	result, err := httputil.DumpResponse(resp, includeHeaders)
+
+	return string(result), err
 }
 
 func executeCommandAndCloseConnection(h2c *http2client.Http2Client, conn net.Conn, sock net.Listener) {

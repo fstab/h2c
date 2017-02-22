@@ -2,18 +2,24 @@
 package http2client
 
 import (
+	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/fstab/h2c/http2client/frames"
-	"github.com/fstab/h2c/http2client/internal/eventloop"
-	"github.com/fstab/h2c/http2client/internal/eventloop/commands"
-	"github.com/fstab/h2c/http2client/internal/util"
-	"golang.org/x/net/http2/hpack"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	neturl "net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fstab/h2c/http2client/frames"
+	"github.com/fstab/h2c/http2client/internal/eventloop"
+	"github.com/fstab/h2c/http2client/internal/eventloop/commands"
+	"github.com/fstab/h2c/http2client/internal/util"
+	"golang.org/x/net/http2/hpack"
 )
 
 type Http2Client struct {
@@ -23,6 +29,42 @@ type Http2Client struct {
 	err                  error               // if != nil, the Http2Client becomes unusable
 	incomingFrameFilters []func(frames.Frame) frames.Frame
 	outgoingFrameFilters []func(frames.Frame) frames.Frame
+	tlsConfig            *tls.Config
+}
+
+func (h2c *Http2Client) RoundTrip(req *http.Request) (*http.Response, error) {
+	var body []byte
+	var err error
+
+	if req.Body != nil {
+		body, err = ioutil.ReadAll(req.Body)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to extract body from request %v", req.URL.String())
+		}
+
+	}
+	s, err := h2c.putOrPostOrGet(req, body, true, 5)
+	if err != nil {
+		return nil, fmt.Errorf("Tried to connect to %v %v got %v", req.Method, req.URL.String(), err)
+	}
+	for _, v := range h2c.customHeaders {
+		fmt.Println("Header:", v.Name)
+	}
+	return s, nil
+}
+
+func Client(tlsConfig *tls.Config) *http.Client {
+	c := &Http2Client{
+		incomingFrameFilters: make([]func(frames.Frame) frames.Frame, 0),
+		outgoingFrameFilters: make([]func(frames.Frame) frames.Frame, 0),
+		tlsConfig:            tlsConfig,
+	}
+
+	ro := &http.Client{
+		Transport: c,
+	}
+	return ro
+
 }
 
 func New() *Http2Client {
@@ -46,17 +88,21 @@ func (h2c *Http2Client) AddFilterForOutgoingFrames(filter func(frames.Frame) fra
 	h2c.outgoingFrameFilters = append(h2c.outgoingFrameFilters, filter)
 }
 
-func (h2c *Http2Client) Connect(scheme string, host string, port int) (string, error) {
+func (h2c *Http2Client) Connect(url url.URL, config *tls.Config) (string, error) {
 	if h2c.err != nil {
 		return "", h2c.err
 	}
-	if scheme != "https" {
-		return "", fmt.Errorf("%v connections not supported.", scheme)
+	if url.Scheme != "https" {
+		return "", fmt.Errorf("%v connections not supported.", url.Scheme)
 	}
 	if h2c.loop != nil && !h2c.loop.IsTerminated() {
 		return "", fmt.Errorf("Already connected to %v:%v.", h2c.loop.Host, h2c.loop.Port)
 	}
-	loop, err := eventloop.Start(host, port, h2c.incomingFrameFilters, h2c.outgoingFrameFilters)
+	port, err := strconv.Atoi(url.Port())
+	if err != nil {
+		return "", fmt.Errorf("Port %v appears not to be a number", url.Port())
+	}
+	loop, err := eventloop.Start(url.Hostname(), port, h2c.incomingFrameFilters, h2c.outgoingFrameFilters, config)
 	if err != nil {
 		return "", err
 	}
@@ -77,44 +123,41 @@ func (h2c *Http2Client) Disconnect() (string, error) {
 	return "", nil
 }
 
-func (h2c *Http2Client) Get(path string, includeHeaders bool, timeoutInSeconds int) (string, error) {
-	return h2c.putOrPostOrGet("GET", path, nil, includeHeaders, timeoutInSeconds)
+func (h2c *Http2Client) Get(req *http.Request, includeHeaders bool, timeoutInSeconds int) (*http.Response, error) {
+	return h2c.putOrPostOrGet(req, nil, includeHeaders, timeoutInSeconds)
 }
 
-func (h2c *Http2Client) Put(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
-	return h2c.putOrPostOrGet("PUT", path, data, includeHeaders, timeoutInSeconds)
+func (h2c *Http2Client) Put(req *http.Request, data []byte, includeHeaders bool, timeoutInSeconds int) (*http.Response, error) {
+	return h2c.putOrPostOrGet(req, data, includeHeaders, timeoutInSeconds)
 }
 
-func (h2c *Http2Client) Post(path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
-	return h2c.putOrPostOrGet("POST", path, data, includeHeaders, timeoutInSeconds)
+func (h2c *Http2Client) Post(req *http.Request, data []byte, includeHeaders bool, timeoutInSeconds int) (*http.Response, error) {
+	return h2c.putOrPostOrGet(req, data, includeHeaders, timeoutInSeconds)
 }
 
-func (h2c *Http2Client) putOrPostOrGet(method string, path string, data []byte, includeHeaders bool, timeoutInSeconds int) (string, error) {
+func (h2c *Http2Client) putOrPostOrGet(req *http.Request, data []byte, includeHeaders bool, timeoutInSeconds int) (*http.Response, error) {
 	if h2c.err != nil {
-		return "", h2c.err
+		return nil, h2c.err
 	}
-	url, err := h2c.completeUrlWithCurrentConnectionData(path)
+	/*url, err := h2c.completeUrlWithCurrentConnectionData(req.URL.Path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	*/
 	if !h2c.isConnected() {
-		scheme := "https"
-		if url.Scheme != "" {
-			scheme = url.Scheme
-		}
-		host, port := hostAndPort(url)
+		host, _ := hostAndPort(req.URL)
 		if host == "" {
-			return "", fmt.Errorf("Not connected. Run 'h2c connect' first.")
+			return nil, fmt.Errorf("Not connected. Run 'h2c connect' first.")
 		}
-		_, err := h2c.Connect(scheme, host, port)
+		_, err := h2c.Connect(*req.URL, h2c.tlsConfig)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 	}
-	if !h2c.urlMatchesCurrentConnection(url) {
-		return "", fmt.Errorf("Cannot query %v while connected to %v", url.Scheme+"://"+url.Host, "https://"+hostAndPortString(h2c.loop.Host, h2c.loop.Port))
+	if !h2c.urlMatchesCurrentConnection(req.URL) {
+		return nil, fmt.Errorf("Cannot query %v while connected to %v", req.URL.Scheme+"://"+req.URL.Host, "https://"+hostAndPortString(h2c.loop.Host, h2c.loop.Port))
 	}
-	cmd := commands.NewHttpCommand(method, url)
+	cmd := commands.NewHttpCommand(req.Method, req.URL)
 	for _, header := range h2c.customHeaders {
 		cmd.Request.AddHeader(header.Name, header.Value)
 	}
@@ -122,20 +165,35 @@ func (h2c *Http2Client) putOrPostOrGet(method string, path string, data []byte, 
 		cmd.Request.SetBody(data, true)
 	}
 	h2c.loop.HttpCommands <- cmd
-	err = cmd.AwaitCompletion(timeoutInSeconds)
+	err := cmd.AwaitCompletion(timeoutInSeconds)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	result := ""
+	// Create an empty response
+	resp := http.Response{Header: map[string][]string{}}
 	if includeHeaders {
 		for _, header := range cmd.Response.GetHeaders() {
-			result = result + header.Name + ": " + header.Value + "\n"
+			switch header.Name {
+			case ":status":
+				code, _ := strconv.Atoi(header.Value)
+				resp.StatusCode = code
+				resp.Status = http.StatusText(code)
+
+			case "content-length":
+				length, _ := strconv.Atoi(header.Value)
+				resp.ContentLength = int64(length)
+			default:
+				resp.Header.Add(header.Name, header.Value)
+			}
 		}
 	}
-	if len(cmd.Response.GetBody()) > 0 {
-		result = result + string(cmd.Response.GetBody())
-	}
-	return result, nil
+	// Set the protocol version on the response
+	resp.ProtoMajor = 2
+	resp.ProtoMinor = 0
+
+	resp.Body = ioutil.NopCloser(bytes.NewBuffer(cmd.Response.GetBody()))
+	return &resp, nil
+
 }
 
 func (h2c *Http2Client) completeUrlWithCurrentConnectionData(path string) (*neturl.URL, error) {

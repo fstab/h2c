@@ -4,15 +4,16 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"os"
+
 	"github.com/fstab/h2c/http2client/frames"
 	"github.com/fstab/h2c/http2client/internal/eventloop/commands"
 	"github.com/fstab/h2c/http2client/internal/stream"
 	"github.com/fstab/h2c/http2client/internal/streamstate"
 	"github.com/fstab/h2c/http2client/internal/util"
 	"golang.org/x/net/http2/hpack"
-	"io"
-	"net"
-	"os"
 )
 
 const CLIENT_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
@@ -62,18 +63,26 @@ type writeFrameRequest struct {
 	task  *util.AsyncTask
 }
 
-func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) (Connection, error) {
+func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame, tlsConfig *tls.Config) (Connection, error) {
 	hostAndPort := fmt.Sprintf("%v:%v", host, port)
 	supportedProtocols := []string{"h2", "h2-16"} // The netty server still uses h2-16, treat it as if it was h2.
-	conn, err := tls.Dial("tcp", hostAndPort, &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         supportedProtocols,
-	})
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: true,
+			NextProtos:         supportedProtocols,
+		}
+	} else {
+		if tlsConfig.NextProtos == nil {
+			tlsConfig.NextProtos = supportedProtocols
+		}
+	}
+
+	conn, err := tls.Dial("tcp", hostAndPort, tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to %v: %v", hostAndPort, err.Error())
 	}
 	if !util.SliceContainsString(supportedProtocols, conn.ConnectionState().NegotiatedProtocol) {
-		return nil, fmt.Errorf("Server does not support HTTP/2 protocol.")
+		return nil, fmt.Errorf("Server does not support HTTP/2 protocol, only %v are supported.", conn.ConnectionState().NegotiatedProtocol)
 	}
 	_, err = conn.Write([]byte(CLIENT_PREFACE))
 	if err != nil {

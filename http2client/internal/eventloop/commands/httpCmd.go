@@ -59,7 +59,7 @@ func (m *httpMsg) GetHeader(name string) string {
 func (m *httpMsg) SetBody(data []byte, addContentLengthHeader bool) {
 	m.body = data
 	if addContentLengthHeader {
-		m.AddHeader("content-length", strconv.Itoa(len(data)))
+		m.AddHeader("Content-Length", strconv.Itoa(len(data)))
 	}
 }
 

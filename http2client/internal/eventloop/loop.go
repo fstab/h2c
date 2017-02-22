@@ -6,6 +6,7 @@ import (
 	"github.com/fstab/h2c/http2client/internal/connection"
 	"github.com/fstab/h2c/http2client/internal/eventloop/commands"
 	"os"
+	"crypto/tls"
 )
 
 type Loop struct {
@@ -38,7 +39,7 @@ type Loop struct {
 //
 // 1. Command line: A user types a comand in order to send a GET, POST, ... request.
 // 2. Network Socket: Frames received from the server.
-func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame) (*Loop, error) {
+func Start(host string, port int, incomingFrameFilters []func(frames.Frame) frames.Frame, outgoingFrameFilters []func(frames.Frame) frames.Frame, tlsConfig *tls.Config) (*Loop, error) {
 	l := &Loop{
 		HttpCommands:       make(chan (*commands.HttpCommand)),
 		MonitoringCommands: make(chan (*commands.MonitoringCommand)),
@@ -49,7 +50,7 @@ func Start(host string, port int, incomingFrameFilters []func(frames.Frame) fram
 		Port:               port,
 		terminated:         false,
 	}
-	conn, err := connection.Start(host, port, incomingFrameFilters, outgoingFrameFilters)
+	conn, err := connection.Start(host, port, incomingFrameFilters, outgoingFrameFilters, tlsConfig)
 	stopFrameReader := false
 	if err != nil {
 		return nil, err
